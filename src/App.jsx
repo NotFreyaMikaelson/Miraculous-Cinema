@@ -1,5 +1,4 @@
-// src/App.jsx
-// Tailwind se carga por CDN (cero configuración). Para producción puedes migrar a Tailwind instalado.
+// Tailwind se carga por CDN (cero configuración).
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Maximize, Minimize, Copy, Check, Mic, MicOff,
@@ -7,7 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
-/* ---------- Setup global: Tailwind CDN + reset del template de Vite ---------- */
+/* ---------- Setup global: Tailwind CDN + reset ---------- */
 if (typeof document !== 'undefined' && !document.getElementById('tw-cdn')) {
   const s = document.createElement('script');
   s.id = 'tw-cdn';
@@ -41,7 +40,9 @@ const fmt = (t = 0) => {
     ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
     : `${m}:${String(s).padStart(2, '0')}`;
 };
-const newRoomId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+const newId = () =>
+  (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+const newRoomId = () => newId().replace(/-/g, '').slice(0, 8);
 const inviteLink = (roomId) => `${window.location.origin}${window.location.pathname}?room=${roomId}`;
 
 /* =====================================================================
@@ -115,7 +116,7 @@ export default function App() {
    SALA
    ===================================================================== */
 function Room({ roomId, name, isHost, onLeave }) {
-  const me = useRef(crypto.randomUUID()).current;
+  const me = useRef(newId()).current;
 
   // Refs de infraestructura
   const channelRef = useRef(null);
@@ -129,6 +130,8 @@ function Room({ roomId, name, isHost, onLeave }) {
   const pendingSyncRef = useRef(null);
   const lastSeekSentRef = useRef(0);
   const objectUrlRef = useRef(null);
+  const urlSrcRef = useRef('');
+  const localNameRef = useRef('');
 
   // Estado de UI
   const [participants, setParticipants] = useState([]);
@@ -387,10 +390,6 @@ function Room({ roomId, name, isHost, onLeave }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  // Refs auxiliares de la fuente de video (para responder a "request-state")
-  const urlSrcRef = useRef('');
-  const localNameRef = useRef('');
-
   // Heartbeat del anfitrión para corregir deriva
   useEffect(() => {
     if (!isHost) return;
@@ -477,7 +476,7 @@ function Room({ roomId, name, isHost, onLeave }) {
     e.preventDefault();
     const text = chatInput.trim();
     if (!text) return;
-    const msg = { id: crypto.randomUUID(), from: me, name, text, ts: Date.now() };
+    const msg = { id: newId(), from: me, name, text, ts: Date.now() };
     setMessages((m) => [...m.slice(-199), msg]);
     send('chat', msg);
     setChatInput('');
