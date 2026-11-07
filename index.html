@@ -5,8 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Miraculous Cinema</title>
   </head>
-  <body style="background:#0f0a1f">
-    <div id="root"></div>
+  <body style="margin:0;background:#0f0a1f;color:#fff;font-family:system-ui,sans-serif">
+    <div id="root">
+      <p style="padding:16px">Cargando…</p>
+    </div>
+    <pre
+      id="dbg"
+      style="display:none;position:fixed;left:0;right:0;bottom:0;max-height:50vh;overflow:auto;margin:0;padding:12px;background:#000;color:#fda4af;font-size:12px;white-space:pre-wrap;z-index:99999"
+    ></pre>
+    <script>
+      function show(m) {
+        var d = document.getElementById('dbg');
+        d.style.display = 'block';
+        d.textContent += m + '\n';
+      }
+      window.addEventListener('error', function (e) {
+        show('ERROR: ' + (e.message || '') + ' ' + (e.filename || '') + ':' + (e.lineno || ''));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        show('PROMESA: ' + ((r && (r.stack || r.message)) || r));
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
