@@ -1,14 +1,9 @@
-// src/supabaseClient.js
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const url = import.meta.env.VITE_SUPABASE_URL || 'https://ffjeuwtmbrwbcnsrnikc.supabase.co';
+const anonKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_qvsGI5_aLXAbTAZhSkiTRQ_h6GWbgtA';
 
-if (!url || !anonKey) {
-  console.error('Faltan VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY en tu archivo .env');
-}
-
-// Solo se usa Realtime (Broadcast + Presence). No se usa Database ni Storage.
 export const supabase = createClient(url, anonKey, {
   realtime: { params: { eventsPerSecond: 20 } },
 });
