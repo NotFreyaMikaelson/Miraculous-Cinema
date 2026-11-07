@@ -103,6 +103,55 @@ const loadIceServers = async () => {
   }
 };
 
+let youtubeApiPromise;
+
+const loadYouTubeAPI = () => {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (youtubeApiPromise) return youtubeApiPromise;
+
+  youtubeApiPromise = new Promise((resolve, reject) => {
+    const previous = window.onYouTubeIframeAPIReady;
+
+    window.onYouTubeIframeAPIReady = () => {
+      previous?.();
+      resolve(window.YT);
+    };
+
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = reject;
+      document.head.appendChild(script);
+    }
+  });
+
+  return youtubeApiPromise;
+};
+
+const getYouTubeId = (url) => {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '');
+
+    let id = null;
+
+    if (host === 'youtu.be') {
+      id = parsed.pathname.split('/')[1];
+    } else if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) {
+      if (parsed.pathname === '/watch') {
+        id = parsed.searchParams.get('v');
+      } else {
+        const match = parsed.pathname.match(/^\/(?:embed|shorts)\/([^/?]+)/);
+        id = match?.[1] || null;
+      }
+    }
+
+    return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+};
+
 function Avatar({ name, size = 38 }) {
   const colors = ['#E8222E', '#7B61FF', '#F59E0B', '#14B8A6', '#EC4899'];
   let h = 0;
@@ -124,6 +173,75 @@ function RemoteAudio({ stream, onBlocked }) {
     if (p && p.catch) p.catch(() => onBlocked?.());
   }, [stream]);
   return <audio ref={ref} autoPlay playsInline />;
+}
+
+function YouTubePlayer({ videoId, playerRef, onReady, onStateChange, onError }) {
+  const elementRef = useRef(null);
+  const instanceRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let instance;
+
+    const initialize = async () => {
+      try {
+        const YT = await loadYouTubeAPI();
+        if (cancelled || !elementRef.current) return;
+
+        instance = new YT.Player(elementRef.current, {
+          videoId,
+          playerVars: {
+            autoplay: 0,
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            playsinline: 1,
+            rel: 0,
+            origin: window.location.origin,
+          },
+          events: {
+            onReady: (event) => {
+              if (cancelled) return;
+
+              instanceRef.current = event.target;
+              playerRef.current = event.target;
+
+              onReady?.(event.target);
+            },
+            onStateChange: (event) => {
+              if (!cancelled) onStateChange?.(event);
+            },
+            onError: (event) => {
+              if (!cancelled) onError?.(event);
+            },
+          },
+        });
+
+        instanceRef.current = instance;
+      } catch (error) {
+        if (!cancelled) onError?.(error);
+      }
+    };
+
+    initialize();
+
+    return () => {
+      cancelled = true;
+
+      if (playerRef.current === instanceRef.current) {
+        playerRef.current = null;
+      }
+
+      instanceRef.current?.destroy();
+      instanceRef.current = null;
+    };
+  }, [videoId]);
+
+  return (
+    <div className="absolute inset-0 w-full h-full bg-black">
+      <div ref={elementRef} className="absolute inset-0 w-full h-full" />
+    </div>
+  );
 }
 
 /* =====================================================================
@@ -208,7 +326,7 @@ function Room({ roomId, name, isHost, onLeave }) {
   // Refs
   const apiRef = useRef({});
   const channelRef = useRef(null);
-  const videoRef = useRef(null);
+  const htmlVideoRef = useRef(null);
   const containerRef = useRef(null);
   const chatEndRef = useRef(null);
   const pcsRef = useRef(new Map());
@@ -226,6 +344,8 @@ function Room({ roomId, name, isHost, onLeave }) {
   const localNameRef = useRef('');
   const cloudPathRef = useRef('');
   const hideRef = useRef(null);
+  const youtubePlayerRef = useRef(null);
+  const youtubeReadyRef = useRef(false);
 
   // Estado
   const [participants, setParticipants] = useState([]);
@@ -258,6 +378,9 @@ function Room({ roomId, name, isHost, onLeave }) {
   const [remoteStreams, setRemoteStreams] = useState({});
   const [peerStatus, setPeerStatus] = useState({});
 
+  const youtubeId = getYouTubeId(videoSrc);
+  const isYouTube = Boolean(youtubeId);
+
   const canControl = isHost || mods.includes(me);
   const isFs = nativeFs || pseudoFs;
   const pct = duration ? Math.min(100, (current / duration) * 100) : 0;
@@ -272,6 +395,11 @@ function Room({ roomId, name, isHost, onLeave }) {
 
   /* ---------- Video ---------- */
   const setSource = (url, label) => {
+    youtubeReadyRef.current = false;
+    youtubePlayerRef.current = null;
+    htmlVideoRef.current = null;
+    pendingSyncRef.current = null;
+
     setVideoSrc(url);
     setVideoLabel(label);
     setCurrent(0);
@@ -280,14 +408,86 @@ function Room({ roomId, name, isHost, onLeave }) {
     setNeedsTap(false);
   };
 
+  const getActiveVideo = () => {
+    if (isYouTube) {
+      const player = youtubePlayerRef.current;
+
+      if (!player || !youtubeReadyRef.current) return null;
+
+      return {
+        src: videoSrc,
+        readyState: 1,
+        get currentTime() {
+          return player.getCurrentTime();
+        },
+        set currentTime(value) {
+          player.seekTo(value, true);
+        },
+        get paused() {
+          return player.getPlayerState() !== 1;
+        },
+        play() {
+          player.playVideo();
+          return Promise.resolve();
+        },
+        pause() {
+          player.pauseVideo();
+        },
+      };
+    }
+
+    return htmlVideoRef.current;
+  };
+
+  const handleYouTubeReady = (player) => {
+    youtubePlayerRef.current = player;
+    youtubeReadyRef.current = true;
+
+    setDuration(player.getDuration());
+    setCurrent(player.getCurrentTime());
+
+    if (pendingSyncRef.current) {
+      const pending = pendingSyncRef.current;
+      pendingSyncRef.current = null;
+      applySync(pending);
+    }
+  };
+
+  const handleYouTubeState = (event) => {
+    if (event.data === 1) {
+      setPlaying(true);
+      setNeedsTap(false);
+    } else if (event.data === 2 || event.data === 0) {
+      setPlaying(false);
+    }
+
+    if (youtubePlayerRef.current) {
+      setCurrent(youtubePlayerRef.current.getCurrentTime());
+      setDuration(youtubePlayerRef.current.getDuration());
+    }
+  };
+
   const applySync = (p) => {
-    const v = videoRef.current;
-    if (!v || !v.src || v.readyState < 1) { pendingSyncRef.current = p; return; }
-    const tryPlay = () => v.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
-    if (p.action === 'play') { v.currentTime = p.time; tryPlay(); }
-    else if (p.action === 'pause') { v.pause(); v.currentTime = p.time; }
-    else if (p.action === 'seek') { v.currentTime = p.time; }
-    else if (p.action === 'state') {
+    const v = getActiveVideo();
+
+    if (!v || !v.src || v.readyState < 1) {
+      pendingSyncRef.current = p;
+      return;
+    }
+
+    const tryPlay = () => v.play()
+      .then(() => setNeedsTap(false))
+      .catch(() => setNeedsTap(true));
+
+    if (p.action === 'play') {
+      v.currentTime = p.time;
+      tryPlay();
+    } else if (p.action === 'pause') {
+      v.pause();
+      v.currentTime = p.time;
+    } else if (p.action === 'seek') {
+      v.currentTime = p.time;
+    } else if (p.action === 'state') {
       if (p.playing) {
         if (Math.abs(v.currentTime - p.time) > 1.5) v.currentTime = p.time;
         if (v.paused) tryPlay();
@@ -310,25 +510,38 @@ function Room({ roomId, name, isHost, onLeave }) {
   };
 
   const togglePlay = () => {
-    const v = videoRef.current;
+    const v = getActiveVideo();
     if (!canControl || !v || !v.src) return;
-    if (v.paused) { v.play().catch(() => {}); act('play', v.currentTime); }
-    else { v.pause(); act('pause', v.currentTime); }
+
+    if (v.paused) {
+      v.play().catch(() => {});
+      act('play', v.currentTime);
+    } else {
+      v.pause();
+      act('pause', v.currentTime);
+    }
   };
 
   const seekTo = (t, throttle = false) => {
-    const v = videoRef.current;
+    const v = getActiveVideo();
     if (!canControl || !v || !v.src) return;
+
     const time = Math.max(0, Math.min(duration || t, t));
+
     v.currentTime = time;
     setCurrent(time);
+
     const now = Date.now();
     if (throttle && now - lastSeekSentRef.current < 150) return;
+
     lastSeekSentRef.current = now;
     act('seek', time);
   };
 
-  const skip = (d) => videoRef.current && seekTo(videoRef.current.currentTime + d);
+  const skip = (d) => {
+    const v = getActiveVideo();
+    if (v) seekTo(v.currentTime + d);
+  };
 
   const poke = () => {
     setCtrlVisible(true);
@@ -351,7 +564,7 @@ function Room({ roomId, name, isHost, onLeave }) {
         return;
       } catch { /* cae al modo alternativo */ }
     }
-    setPseudoFs(true); // iPhone y navegadores sin API de pantalla completa
+    setPseudoFs(true);
   };
 
   /* ---------- Fuente de video: nube, enlace, local ---------- */
@@ -400,6 +613,7 @@ function Room({ roomId, name, isHost, onLeave }) {
     urlSrcRef.current = { url, label: url };
     localNameRef.current = '';
     setSource(url, url);
+    setUrlInput('');
     send('video-url', { url, label: url });
   };
 
@@ -435,11 +649,22 @@ function Room({ roomId, name, isHost, onLeave }) {
 
   const onRequestState = () => {
     if (!isHost) return;
+
     if (urlSrcRef.current) send('video-url', urlSrcRef.current);
     else if (localNameRef.current) send('video-local', { name: localNameRef.current });
+
     send('roles', { mods });
-    const v = videoRef.current;
-    if (v && v.src) send('sync', { action: 'state', time: v.currentTime, playing: !v.paused, from: me });
+
+    const v = getActiveVideo();
+
+    if (v && v.src) {
+      send('sync', {
+        action: 'state',
+        time: v.currentTime,
+        playing: !v.paused,
+        from: me,
+      });
+    }
   };
 
   /* ---------- Moderadoras ---------- */
@@ -516,7 +741,6 @@ function Room({ roomId, name, isHost, onLeave }) {
     return pc;
   };
 
-  // Regla anti-colisión: ofrece el que tiene el id menor
   const maybeConnect = (peerId) => {
     if (!localStreamRef.current || !voicePeersRef.current.has(peerId)) return;
     if (pcsRef.current.has(peerId)) return;
@@ -540,9 +764,9 @@ function Room({ roomId, name, isHost, onLeave }) {
       return;
     }
     if (kind === 'hello') {
-      if (!localStreamRef.current) return; // si entro después, mi hello llegará a esa persona
+      if (!localStreamRef.current) return;
       if (!reply) {
-        closePeer(from, true); // reconexión: descarta el enlace viejo
+        closePeer(from, true);
         pendingIceRef.current.delete(from);
         retriesRef.current.delete(from);
         send('voice', { kind: 'hello', from: me, to: from, reply: true });
@@ -666,7 +890,6 @@ function Room({ roomId, name, isHost, onLeave }) {
     onLeave();
   };
 
-  // API siempre actualizada para los handlers del canal
   apiRef.current = { onSync, onVideoUrl, onVideoLocal, onRequestState, handleSignal, handleVoice, pruneGone, maybeConnect };
 
   /* ---------- Efectos ---------- */
@@ -712,18 +935,24 @@ function Room({ roomId, name, isHost, onLeave }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  // Latido de la anfitriona: corrige la deriva de todas
   useEffect(() => {
     if (!isHost) return;
+
     const id = setInterval(() => {
-      const v = videoRef.current;
+      const v = getActiveVideo();
+
       if (v && v.src && v.readyState >= 1) {
-        send('sync', { action: 'state', time: v.currentTime, playing: !v.paused, from: me });
+        send('sync', {
+          action: 'state',
+          time: v.currentTime,
+          playing: !v.paused,
+          from: me,
+        });
       }
     }, 4000);
+
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isHost]);
+  }, [isHost, isYouTube, videoSrc]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages]);
 
@@ -794,26 +1023,37 @@ function Room({ roomId, name, isHost, onLeave }) {
               onTouchStart={poke}
             >
               {videoSrc ? (
-                <video
-                  key={videoSrc}
-                  ref={videoRef}
-                  src={videoSrc}
-                  playsInline
-                  preload="auto"
-                  className="absolute inset-0 w-full h-full object-contain bg-black"
-                  onClick={() => (canControl ? togglePlay() : poke())}
-                  onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
-                  onLoadedMetadata={(e) => {
-                    setDuration(e.currentTarget.duration);
-                    if (pendingSyncRef.current) {
-                      const p = pendingSyncRef.current;
-                      pendingSyncRef.current = null;
-                      applySync(p);
-                    }
-                  }}
-                  onPlay={() => setPlaying(true)}
-                  onPause={() => setPlaying(false)}
-                />
+                isYouTube ? (
+                  <YouTubePlayer
+                    key={youtubeId}
+                    videoId={youtubeId}
+                    playerRef={youtubePlayerRef}
+                    onReady={handleYouTubeReady}
+                    onStateChange={handleYouTubeState}
+                    onError={() => setNotice('Error al reproducir el video de YouTube')}
+                  />
+                ) : (
+                  <video
+                    key={videoSrc}
+                    ref={htmlVideoRef}
+                    src={videoSrc}
+                    playsInline
+                    preload="auto"
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
+                    onClick={() => (canControl ? togglePlay() : poke())}
+                    onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+                    onLoadedMetadata={(e) => {
+                      setDuration(e.currentTarget.duration);
+                      if (pendingSyncRef.current) {
+                        const p = pendingSyncRef.current;
+                        pendingSyncRef.current = null;
+                        applySync(p);
+                      }
+                    }}
+                    onPlay={() => setPlaying(true)}
+                    onPause={() => setPlaying(false)}
+                  />
+                )
               ) : (
                 <div className="absolute inset-0 lunares flex items-center justify-center p-6">
                   <div className="bg-[var(--tinta)] text-white rounded-3xl px-6 py-5 text-center max-w-xs">
@@ -830,7 +1070,10 @@ function Room({ roomId, name, isHost, onLeave }) {
               {needsTap && (
                 <button
                   className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-black/75 text-lg font-bold"
-                  onClick={() => videoRef.current?.play().then(() => setNeedsTap(false)).catch(() => {})}
+                  onClick={() => {
+                    const v = getActiveVideo();
+                    v?.play().then(() => setNeedsTap(false)).catch(() => {});
+                  }}
                 >
                   <Play /> Toca para unirte a la función
                 </button>
@@ -904,14 +1147,14 @@ function Room({ roomId, name, isHost, onLeave }) {
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && loadUrl()}
-                      placeholder="O pega un enlace directo https://…/episodio.mp4"
+                      placeholder="Pega un enlace directo o de YouTube (ej. https://youtu.be/...)"
                     />
                     <button className="btn btn-tinta shrink-0" onClick={loadUrl}>
                       <LinkIcon size={16} /> Cargar
                     </button>
                   </div>
                   <p className="text-xs text-[var(--tenue)]">
-                    Los videos subidos se ven en todas las pantallas sin descargar nada. Máximo {MAX_UPLOAD_MB} MB; se borra al salir de la sala.
+                    Puedes subir archivos, pegar enlaces directos MP4 o enlaces de YouTube para verlos en sincronía con tus amigas.
                   </p>
                 </>
               )}
