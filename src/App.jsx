@@ -1,83 +1,18 @@
-// Tailwind por CDN + estilos propios inyectados desde este archivo.
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Maximize, Minimize, Copy, Check, Mic, MicOff,
   PhoneCall, PhoneOff, Send, Crown, ShieldCheck, Shield, LogOut, Upload, FileVideo, Cast,
-  Link as LinkIcon, Trash2, Volume2, Loader2,
+  Link as LinkIcon, Trash2, Volume2, VolumeX, Loader2, RefreshCw, Share2,
+  PanelRightClose, PanelRightOpen, MessageCircle, Users, Headphones,
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { BUCKET, MAX_UPLOAD_MB, TURN_CREDENTIALS_URL } from './config';
 
 /* =====================================================================
-   Estilos globales
-   ===================================================================== */
-if (typeof document !== 'undefined' && !document.getElementById('wp-setup')) {
-  const tw = document.createElement('script');
-  tw.id = 'tw-cdn';
-  tw.src = 'https://cdn.tailwindcss.com';
-  document.head.appendChild(tw);
-
-  const font = document.createElement('link');
-  font.rel = 'stylesheet';
-  font.href =
-    'https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Hanken+Grotesk:wght@400;500;700;800&display=swap';
-  document.head.appendChild(font);
-
-  const st = document.createElement('style');
-  st.id = 'wp-setup';
-  st.textContent = `
-:root{--noche:#15112E;--azotea:#221D45;--zinc:#2F2A57;--linea:#443E7A;--mariquita:#E8222E;--tinta:#0B0A16;--luna:#ECEAFB;--gato:#A8F04A;--tenue:#A9A5D6;
---skyline:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 60'%3E%3Cpath fill='%231b1640' d='M0 60V38L24 20L48 38V60ZM30 22V10h8v14ZM60 60V32L100 14L140 32V60ZM112 18V6h8v14ZM150 60V40L180 24L210 40V60ZM214 60V44L227 36L240 44V60Z'/%3E%3C/svg%3E")}
-html,body{margin:0;padding:0;background:var(--noche);color:var(--luna);font-family:'Hanken Grotesk',system-ui,sans-serif;display:block!important;place-items:initial!important;min-width:0!important}
-#root{max-width:none!important;margin:0!important;padding:0!important;width:100%!important;text-align:left!important}
-*{box-sizing:border-box}
-:focus-visible{outline:3px solid var(--gato);outline-offset:2px}
-.fx-display{font-family:'Bagel Fat One','Hanken Grotesk',system-ui,sans-serif;font-weight:400;letter-spacing:.01em}
-.cielo{min-height:100dvh;position:relative;isolation:isolate;background:radial-gradient(120% 55% at 50% -8%,#2d2166 0%,transparent 62%),var(--noche)}
-.cielo::after{content:'';position:fixed;left:0;right:0;bottom:0;height:96px;background:var(--skyline) repeat-x left bottom/240px 60px;pointer-events:none;z-index:-1}
-.lunares{background-color:var(--mariquita);background-image:radial-gradient(circle,var(--tinta) 15px,transparent 16px),radial-gradient(circle,var(--tinta) 15px,transparent 16px);background-size:84px 84px;background-position:0 0,42px 42px}
-.logo{width:34px;height:34px;border-radius:50%;flex:none;background-color:var(--mariquita);background-image:radial-gradient(circle,var(--tinta) 3px,transparent 3.5px),radial-gradient(circle,var(--tinta) 3px,transparent 3.5px);background-size:16px 16px;background-position:0 0,8px 8px;box-shadow:inset 0 0 0 2px var(--tinta)}
-.bulbs{position:relative;height:16px;margin:0 26px}
-.bulbs::before,.bulbs::after{content:'';position:absolute;inset:0;background-repeat:repeat-x;background-size:44px 16px;opacity:.5}
-.bulbs::before{background-image:radial-gradient(circle at 11px 8px,var(--mariquita) 0 4.5px,transparent 5.5px)}
-.bulbs::after{background-image:radial-gradient(circle at 33px 8px,var(--gato) 0 4.5px,transparent 5.5px)}
-.vivo .bulbs::before{animation:luz 1.4s steps(1) infinite}
-.vivo .bulbs::after{animation:luz 1.4s steps(1) infinite;animation-delay:-.7s}
-@keyframes luz{0%{opacity:1}50%{opacity:.22}}
-@media (prefers-reduced-motion:reduce){.vivo .bulbs::before,.vivo .bulbs::after{animation:none;opacity:1}}
-.pantalla{position:relative;overflow:hidden;background:#000;border:7px solid var(--tinta);border-radius:28px;box-shadow:0 0 0 2px var(--linea),0 26px 60px -24px rgba(232,34,46,.55)}
-.isfs .pantalla{border:0;border-radius:0;box-shadow:none;height:100%}
-.yt-holder iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
-.panel{background:var(--azotea);border:1px solid var(--linea);border-radius:22px}
-.pill{display:inline-flex;align-items:center;gap:.4rem;border-radius:999px;padding:.3rem .75rem;font-size:.8rem;background:var(--zinc);border:1px solid var(--linea)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;border-radius:14px;padding:.65rem 1rem;font-weight:700;font-size:.92rem;border:0;cursor:pointer;color:var(--luna);background:var(--zinc);transition:filter .15s}
-.btn:hover:not(:disabled){filter:brightness(1.18)}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-rojo{background:var(--mariquita);color:#fff}
-.btn-gato{background:var(--gato);color:var(--tinta)}
-.btn-tinta{background:var(--tinta);color:#fff}
-.btn-sm{padding:.4rem .5rem;border-radius:10px}
-.campo{width:100%;border-radius:14px;border:2px solid #cfcaf0;background:#fff;color:var(--tinta);padding:.75rem .9rem;font-size:1rem;outline:none}
-.campo-noche{width:100%;border-radius:14px;border:1px solid var(--linea);background:var(--noche);color:var(--luna);padding:.6rem .8rem;font-size:.92rem;outline:none}
-.campo-noche::placeholder{color:#7f7ab0}
-.boleto-a{position:relative;color:var(--tinta);border-radius:24px 24px 0 0;background:linear-gradient(90deg,#b9b4e6 50%,transparent 0) 0 100%/12px 2px repeat-x,var(--luna);-webkit-mask:radial-gradient(circle 14px at 0 100%,#0000 97%,#000),radial-gradient(circle 14px at 100% 100%,#0000 97%,#000);-webkit-mask-composite:source-in;mask:radial-gradient(circle 14px at 0 100%,#0000 97%,#000),radial-gradient(circle 14px at 100% 100%,#0000 97%,#000);mask-composite:intersect}
-.boleto-b{position:relative;color:var(--tinta);border-radius:0 0 24px 24px;background:var(--luna);-webkit-mask:radial-gradient(circle 14px at 0 0,#0000 97%,#000),radial-gradient(circle 14px at 100% 0,#0000 97%,#000);-webkit-mask-composite:source-in;mask:radial-gradient(circle 14px at 0 0,#0000 97%,#000),radial-gradient(circle 14px at 100% 0,#0000 97%,#000);mask-composite:intersect}
-.avatar{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:800;flex:none;box-shadow:inset 0 0 0 2px var(--tinta);background-image:radial-gradient(circle at 22% 28%,rgba(11,10,22,.5) 0 3px,transparent 3.5px),radial-gradient(circle at 78% 70%,rgba(11,10,22,.5) 0 3.5px,transparent 4px)}
-.burbuja{max-width:86%;padding:.5rem .8rem;font-size:.9rem;word-break:break-word;background:var(--zinc);border-radius:18px 18px 18px 4px}
-.burbuja-mia{background:var(--mariquita);color:#fff;border-radius:18px 18px 4px 18px}
-.barra{-webkit-appearance:none;appearance:none;width:100%;height:8px;border-radius:99px;outline:none;cursor:pointer;background:linear-gradient(90deg,var(--mariquita) var(--p,0%),rgba(255,255,255,.22) var(--p,0%))}
-.barra:disabled{cursor:default;opacity:.75}
-.barra::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--mariquita);border:4px solid var(--tinta);box-shadow:0 0 0 2px #fff}
-.barra::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--mariquita);border:4px solid var(--tinta);box-shadow:0 0 0 2px #fff}
-.scroll-fino{scrollbar-width:thin;scrollbar-color:var(--linea) transparent}
-  `;
-  document.head.appendChild(st);
-}
-
-/* =====================================================================
    Utilidades
    ===================================================================== */
 const STUN = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
+const EMOJIS = ['🐞', '🐱', '❤️', '😂', '😮', '👏'];
 
 const newId = () =>
   crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
@@ -104,7 +39,7 @@ const loadIceServers = async () => {
   }
 };
 
-// Devuelve el ID de un enlace de YouTube (watch, youtu.be, shorts, embed, live) o null
+// ID de un enlace de YouTube (watch, youtu.be, shorts, embed, live) o null
 const parseYouTube = (u) => {
   try {
     const x = new URL(u);
@@ -119,7 +54,7 @@ const parseYouTube = (u) => {
   return null;
 };
 
-// Carga la API oficial de YouTube IFrame una sola vez
+// API oficial de YouTube IFrame, se carga una sola vez y solo si hace falta
 let ytApiPromise = null;
 const loadYT = () => {
   if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
@@ -135,7 +70,10 @@ const loadYT = () => {
   return ytApiPromise;
 };
 
-function Avatar({ name, size = 38 }) {
+/* =====================================================================
+   Componentes pequeños (memoizados para no repintarse con cada segundo del video)
+   ===================================================================== */
+const Avatar = memo(function Avatar({ name, size = 38 }) {
   const colors = ['#E8222E', '#7B61FF', '#F59E0B', '#14B8A6', '#EC4899'];
   let h = 0;
   for (const c of name || '?') h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -144,7 +82,7 @@ function Avatar({ name, size = 38 }) {
       {(name || '?').trim().charAt(0).toUpperCase()}
     </span>
   );
-}
+});
 
 function RemoteAudio({ stream, onBlocked }) {
   const ref = useRef(null);
@@ -158,12 +96,149 @@ function RemoteAudio({ stream, onBlocked }) {
   return <audio ref={ref} autoPlay playsInline />;
 }
 
+const ChatPanel = memo(function ChatPanel({ messages, me, act, visible, className }) {
+  const [text, setText] = useState('');
+  const scrollRef = useRef(null);
+  const stickRef = useRef(true);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages, visible]);
+
+  const submit = (e) => {
+    e.preventDefault();
+    const t = text.trim();
+    if (!t) return;
+    act.sendChat(t);
+    setText('');
+    stickRef.current = true;
+  };
+
+  return (
+    <div className={`panel flex flex-col ${className}`}>
+      <h2 className="font-display text-lg px-4 pt-4 pb-2">Charla</h2>
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+        className="flex-1 overflow-y-auto scroll-fino px-4 space-y-2"
+        aria-live="polite"
+      >
+        {messages.length === 0 && <p className="text-sm text-tenue pt-2">Escribe el primer mensaje.</p>}
+        {messages.map((m) => {
+          const mine = m.from === me;
+          return (
+            <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+              {!mine && <span className="text-[11px] text-tenue px-1">{m.name}</span>}
+              <div className={`burbuja ${mine ? 'burbuja-mia' : ''}`}>{m.text}</div>
+            </div>
+          );
+        })}
+      </div>
+      <form onSubmit={submit} className="p-3 flex gap-2">
+        <input
+          className="campo-noche"
+          value={text}
+          maxLength={500}
+          placeholder="Escribe un mensaje"
+          onChange={(e) => setText(e.target.value)}
+        />
+        <button type="submit" className="btn btn-rojo shrink-0" aria-label="Enviar mensaje">
+          <Send size={18} />
+        </button>
+      </form>
+    </div>
+  );
+});
+
+const Palco = memo(function Palco({ participants, mods, peerStatus, inVoice, isHost, me, act, className }) {
+  const roleOf = (p) => (p.host ? 'Anfitriona' : mods.includes(p.id) ? 'Moderadora' : 'Invitada');
+  return (
+    <div className={`panel p-4 ${className}`}>
+      <h2 className="font-display text-lg mb-3">En la sala ({participants.length})</h2>
+      <ul className="space-y-3 max-h-64 overflow-y-auto scroll-fino pr-1">
+        {participants.map((p) => {
+          const isMod = mods.includes(p.id);
+          const st = peerStatus[p.id];
+          return (
+            <li key={p.id} className="flex items-center gap-3">
+              <Avatar name={p.name} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-sm font-bold">
+                  <span className="truncate">{p.name}{p.id === me ? ' (tú)' : ''}</span>
+                  {p.host && <span title="Anfitriona"><Crown size={14} className="text-oro" /></span>}
+                  {isMod && <span title="Moderadora"><ShieldCheck size={14} className="text-gato" /></span>}
+                </div>
+                <div className="text-xs text-tenue flex flex-wrap gap-x-2">
+                  <span>{roleOf(p)}</span>
+                  {p.voice && <span className={p.muted ? 'text-alerta' : 'text-gato'}>{p.muted ? 'micrófono apagado' : 'en la llamada'}</span>}
+                  {inVoice && p.voice && p.id !== me && st === 'connected' && <span className="text-gato">voz conectada</span>}
+                  {inVoice && p.voice && p.id !== me && st === 'connecting' && <span className="text-amber-300">conectando voz…</span>}
+                  {inVoice && p.voice && p.id !== me && st === 'failed' && <span className="text-alerta">sin conexión de voz</span>}
+                </div>
+              </div>
+              {p.voice && (p.muted ? <MicOff size={16} className="text-alerta shrink-0" /> : <Mic size={16} className="text-gato shrink-0" />)}
+              {isHost && p.id !== me && (
+                <button
+                  className={`btn btn-sm ${isMod ? 'btn-gato' : ''}`}
+                  onClick={() => act.toggleMod(p.id)}
+                  aria-label={isMod ? `Quitar moderadora a ${p.name}` : `Hacer moderadora a ${p.name}`}
+                  title={isMod ? 'Quitar moderadora' : 'Hacer moderadora'}
+                >
+                  {isMod ? <ShieldCheck size={16} /> : <Shield size={16} />}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+});
+
+const VoicePanel = memo(function VoicePanel({ inVoice, muted, voiceError, audioBlocked, failedPeers, act, className }) {
+  return (
+    <div className={`panel p-4 ${className}`}>
+      <h2 className="font-display text-lg mb-3">Llamada de voz</h2>
+      {!inVoice ? (
+        <button className="btn btn-gato w-full" onClick={() => act.joinVoice()}>
+          <PhoneCall size={18} /> Entrar a la llamada de voz
+        </button>
+      ) : (
+        <div className="flex gap-2">
+          <button className={`btn flex-1 ${muted ? 'btn-rojo' : ''}`} onClick={() => act.toggleMute()}>
+            {muted ? <><MicOff size={18} /> Activar micrófono</> : <><Mic size={18} /> Mutear micrófono</>}
+          </button>
+          <button className="btn btn-tinta" onClick={() => act.leaveVoice()} aria-label="Salir de la llamada">
+            <PhoneOff size={18} />
+          </button>
+        </div>
+      )}
+      {voiceError && <p className="text-sm text-alerta mt-3">{voiceError}</p>}
+      {audioBlocked && (
+        <button className="btn btn-rojo w-full mt-3" onClick={() => act.enableAudio()}>
+          <Volume2 size={18} /> Toca para activar el audio
+        </button>
+      )}
+      {failedPeers && !TURN_CREDENTIALS_URL && (
+        <p className="text-xs text-amber-300 mt-3">
+          Algunas conexiones no lograron enlazarse. Con datos móviles o ciertas redes hace falta un servidor TURN (configúralo en config.js).
+        </p>
+      )}
+    </div>
+  );
+});
+
 /* =====================================================================
    App: lobby y sala
    ===================================================================== */
 export default function App() {
   const urlRoom = new URLSearchParams(window.location.search).get('room');
   const [name, setName] = useState(() => localStorage.getItem('wp-name') || '');
+  const [code, setCode] = useState('');
   const [session, setSession] = useState(null);
   const [error, setError] = useState('');
 
@@ -171,10 +246,17 @@ export default function App() {
     const n = name.trim();
     if (!n) return setError('Escribe tu nombre para entrar');
     localStorage.setItem('wp-name', n);
-    if (createdByMe) sessionStorage.setItem(`wp-host-${roomId}`, '1');
-    const isHost = sessionStorage.getItem(`wp-host-${roomId}`) === '1';
+    if (createdByMe) localStorage.setItem(`wp-host-${roomId}`, '1');
+    const isHost = localStorage.getItem(`wp-host-${roomId}`) === '1';
     window.history.replaceState(null, '', `?room=${roomId}`);
     setSession({ roomId, name: n, isHost });
+  };
+
+  const joinWithCode = () => {
+    const raw = code.trim();
+    if (!raw) return;
+    const m = raw.match(/room=([\w-]+)/);
+    enter(m ? m[1] : raw.replace(/[^\w-]/g, ''), false);
   };
 
   const leave = () => {
@@ -189,15 +271,15 @@ export default function App() {
       <div className="w-full max-w-md">
         <div className="flex items-center gap-3 mb-2">
           <span className="logo" />
-          <h1 className="fx-display text-4xl leading-none">Cine Miraculous</h1>
+          <h1 className="font-display text-4xl leading-none">Cine Miraculous</h1>
         </div>
-        <p className="text-[var(--tenue)] mb-7 max-w-sm">
+        <p className="text-tenue mb-7 max-w-sm">
           Ve episodios con tus amigas, cada una desde su casa, y charlen mientras tanto.
         </p>
 
         <div className="boleto-a">
           <div className="lunares h-14 rounded-t-[24px] flex items-end px-5">
-            <span className="bg-[var(--tinta)] text-white text-sm font-bold px-3 py-1 rounded-t-xl">Entrada para la función</span>
+            <span className="bg-tinta text-white text-sm font-bold px-3 py-1 rounded-t-xl">Entrada para la función</span>
           </div>
           <div className="p-6 pt-5">
             <label className="block text-sm font-bold mb-1" htmlFor="nombre">¿Cómo te llamas?</label>
@@ -225,6 +307,22 @@ export default function App() {
           >
             Crear Sala Miraculous
           </button>
+          {!urlRoom && (
+            <div className="pt-2">
+              <label className="block text-sm font-bold mb-1" htmlFor="codigo">¿Te invitaron? Pega el enlace o el código</label>
+              <div className="flex gap-2">
+                <input
+                  id="codigo"
+                  className="campo"
+                  value={code}
+                  placeholder="a1b2c3d4"
+                  onChange={(e) => setCode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && joinWithCode()}
+                />
+                <button className="btn btn-tinta shrink-0" onClick={joinWithCode}>Entrar</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -236,17 +334,16 @@ export default function App() {
    ===================================================================== */
 function Room({ roomId, name, isHost, onLeave }) {
   const me = useRef(getUid()).current;
+  const act = useRef({}).current; // acciones siempre actualizadas, con identidad estable
 
   // Refs
-  const apiRef = useRef({});
   const channelRef = useRef(null);
   const videoRef = useRef(null);
   const ytRef = useRef(null);
   const ytHolderRef = useRef(null);
   const containerRef = useRef(null);
-  const chatEndRef = useRef(null);
   const pcsRef = useRef(new Map());           // voz
-  const pendingIceRef = useRef(new Map());    // voz
+  const pendingIceRef = useRef(new Map());
   const voicePeersRef = useRef(new Set());
   const retriesRef = useRef(new Map());
   const streamPcsRef = useRef(new Map());     // transmisión de video en vivo
@@ -260,26 +357,31 @@ function Room({ roomId, name, isHost, onLeave }) {
   const pendingSyncRef = useRef(null);
   const lastSeekSentRef = useRef(0);
   const lastActRef = useRef(0);
+  const lastReactRef = useRef(0);
   const objectUrlRef = useRef(null);
-  const urlSrcRef = useRef(null);             // { url, label } nube, enlace o YouTube
+  const urlSrcRef = useRef(null);
   const localNameRef = useRef('');
   const cloudPathRef = useRef('');
   const srcKeyRef = useRef('');
   const hideRef = useRef(null);
+  const fsMsgRef = useRef(null);
   const participantsRef = useRef([]);
+  const prevPartsRef = useRef(null);
+  const readyRef = useRef(false);
   const modeRef = useRef('none');
+  const tabRef = useRef('charla');
 
   // Estado
   const [participants, setParticipants] = useState([]);
   const [mods, setMods] = useState(() => {
     if (!isHost) return [];
-    try { return JSON.parse(sessionStorage.getItem(`wp-mods-${roomId}`) || '[]'); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(`wp-mods-${roomId}`) || '[]'); } catch { return []; }
   });
   const [messages, setMessages] = useState([]);
-  const [chatInput, setChatInput] = useState('');
   const [mode, setMode] = useState('none'); // none | file | youtube | stream
   const [videoSrc, setVideoSrc] = useState('');
   const [ytId, setYtId] = useState('');
+  const [ytReady, setYtReady] = useState(false);
   const [videoLabel, setVideoLabel] = useState('');
   const [remoteVideo, setRemoteVideo] = useState(null);
   const [liveCount, setLiveCount] = useState(0);
@@ -289,10 +391,17 @@ function Room({ roomId, name, isHost, onLeave }) {
   const [uploading, setUploading] = useState(false);
   const [hasCloud, setHasCloud] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [buffering, setBuffering] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(() => {
+    const v = parseFloat(localStorage.getItem('wp-vol'));
+    return isFinite(v) ? v : 1;
+  });
+  const [filmMuted, setFilmMuted] = useState(false);
   const [nativeFs, setNativeFs] = useState(false);
   const [pseudoFs, setPseudoFs] = useState(false);
+  const [theater, setTheater] = useState(false);
   const [ctrlVisible, setCtrlVisible] = useState(true);
   const [needsTap, setNeedsTap] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -303,21 +412,34 @@ function Room({ roomId, name, isHost, onLeave }) {
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [remoteStreams, setRemoteStreams] = useState({});
   const [peerStatus, setPeerStatus] = useState({});
+  const [floaters, setFloaters] = useState([]);
+  const [toasts, setToasts] = useState([]);
+  const [fsMsg, setFsMsg] = useState(null);
+  const [tab, setTab] = useState('charla');
+  const [unread, setUnread] = useState(0);
 
   modeRef.current = mode;
   participantsRef.current = participants;
+  tabRef.current = tab;
 
   const canControl = isHost || mods.includes(me);
   const liveGuest = mode === 'stream' && !isHost;
+  const volumeAllowed = mode !== 'none' && !(mode === 'stream' && isHost);
   const isFs = nativeFs || pseudoFs;
   const pct = duration ? Math.min(100, (current / duration) * 100) : 0;
   const controlsVisible = ctrlVisible || !playing || mode === 'none';
+  const hostGone = connected && participants.length > 0 && !participants.some((p) => p.host);
 
-  /* ---------- Helpers de canal ---------- */
+  /* ---------- Helpers de canal y avisos ---------- */
   const send = (event, payload = {}) => channelRef.current?.send({ type: 'broadcast', event, payload });
   const updatePresence = (patch) => {
     presenceRef.current = { ...presenceRef.current, ...patch };
     channelRef.current?.track(presenceRef.current);
+  };
+  const toast = (text) => {
+    const id = newId();
+    setToasts((t) => [...t.slice(-3), { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((q) => q.id !== id)), 4000);
   };
 
   /* ---------- Fuente de video ---------- */
@@ -335,6 +457,7 @@ function Room({ roomId, name, isHost, onLeave }) {
     setCurrent(0);
     setDuration(0);
     setPlaying(false);
+    setBuffering(false);
     setNeedsTap(false);
   };
 
@@ -442,6 +565,11 @@ function Room({ roomId, name, isHost, onLeave }) {
     setNeedsTap(false);
   };
 
+  const resync = () => {
+    send('request-state', { from: me });
+    toast('Pidiendo sincronización a la anfitriona…');
+  };
+
   const poke = () => {
     setCtrlVisible(true);
     clearTimeout(hideRef.current);
@@ -465,6 +593,8 @@ function Room({ roomId, name, isHost, onLeave }) {
     }
     setPseudoFs(true); // iPhone y navegadores sin API de pantalla completa
   };
+
+  const toggleFilmMute = () => { if (volumeAllowed) setFilmMuted((m) => !m); };
 
   /* ---------- Cargar video: nube, enlace/YouTube, archivo en vivo ---------- */
   const removeCloud = async () => {
@@ -592,7 +722,7 @@ function Room({ roomId, name, isHost, onLeave }) {
   const toggleMod = (id) => {
     const next = mods.includes(id) ? mods.filter((m) => m !== id) : [...mods, id];
     setMods(next);
-    sessionStorage.setItem(`wp-mods-${roomId}`, JSON.stringify(next));
+    localStorage.setItem(`wp-mods-${roomId}`, JSON.stringify(next));
     send('roles', { mods: next });
   };
 
@@ -640,7 +770,7 @@ function Room({ roomId, name, isHost, onLeave }) {
     if (!isHost || !peerId || modeRef.current !== 'stream') return;
     const s = getCapture();
     if (!s || s.getTracks().length === 0) {
-      if (attempt < 12) setTimeout(() => apiRef.current.streamTo(peerId, attempt + 1), 500);
+      if (attempt < 12) setTimeout(() => act.streamTo(peerId, attempt + 1), 500);
       return;
     }
     closeStreamPc(peerId);
@@ -659,7 +789,7 @@ function Room({ roomId, name, isHost, onLeave }) {
         closeStreamPc(peerId);
         const n = (vRetriesRef.current.get(peerId) || 0) + 1;
         vRetriesRef.current.set(peerId, n);
-        if (n <= 3) setTimeout(() => apiRef.current.streamTo(peerId), 2000);
+        if (n <= 3) setTimeout(() => act.streamTo(peerId), 2000);
       }
     };
     (async () => {
@@ -774,7 +904,7 @@ function Room({ roomId, name, isHost, onLeave }) {
         setPeerStatus((s) => ({ ...s, [peerId]: 'failed' }));
         const n = (retriesRef.current.get(peerId) || 0) + 1;
         retriesRef.current.set(peerId, n);
-        if (n <= 3) setTimeout(() => apiRef.current.maybeConnect(peerId), 2000);
+        if (n <= 3) setTimeout(() => act.maybeConnect(peerId), 2000);
       }
     };
 
@@ -908,24 +1038,52 @@ function Room({ roomId, name, isHost, onLeave }) {
     setAudioBlocked(false);
   };
 
-  /* ---------- Chat y sala ---------- */
-  const sendChat = (e) => {
-    e.preventDefault();
-    const text = chatInput.trim();
-    if (!text) return;
-    const msg = { id: newId(), from: me, name, text, ts: Date.now() };
-    setMessages((m) => [...m.slice(-199), msg]);
-    send('chat', msg);
-    setChatInput('');
+  /* ---------- Chat, reacciones e invitación ---------- */
+  const onChat = (m) => {
+    setMessages((ms) => [...ms.slice(-199), m]);
+    if (tabRef.current !== 'charla' && window.innerWidth < 1024) setUnread((u) => u + 1);
+    setFsMsg(m);
+    clearTimeout(fsMsgRef.current);
+    fsMsgRef.current = setTimeout(() => setFsMsg(null), 6000);
   };
 
-  const copyInvite = async () => {
+  const sendChat = (text) => {
+    const msg = { id: newId(), from: me, name, text, ts: Date.now() };
+    setMessages((ms) => [...ms.slice(-199), msg]);
+    send('chat', msg);
+  };
+
+  const addFloater = (emoji) => {
+    if (!EMOJIS.includes(emoji)) return;
+    const id = newId();
+    setFloaters((f) => [...f.slice(-23), { id, emoji, x: 8 + Math.random() * 80 }]);
+    setTimeout(() => setFloaters((f) => f.filter((q) => q.id !== id)), 2500);
+  };
+
+  const sendReaction = (emoji) => {
+    const now = Date.now();
+    if (now - lastReactRef.current < 120) return;
+    lastReactRef.current = now;
+    addFloater(emoji);
+    send('react', { emoji, from: me });
+  };
+
+  const shareInvite = async () => {
+    const url = inviteLink(roomId);
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Cine Miraculous', text: 'Ven a ver con nosotras', url });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+      }
+    }
     try {
-      await navigator.clipboard.writeText(inviteLink(roomId));
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      window.prompt('Copia el enlace:', inviteLink(roomId));
+      window.prompt('Copia el enlace:', url);
     }
   };
 
@@ -936,47 +1094,51 @@ function Room({ roomId, name, isHost, onLeave }) {
     onLeave();
   };
 
-  // API siempre actualizada para los handlers del canal
-  apiRef.current = {
-    onSync, onVideoUrl, onVideoStream, onVideoLocal, onRequestState, handleSignal, handleVoice,
-    handleVsig, pruneGone, maybeConnect, streamTo, hostState, applyLocal,
-  };
+  // Acciones con identidad estable y siempre con la versión más reciente
+  Object.assign(act, {
+    onSync, onChat, onVideoUrl, onVideoStream, onVideoLocal, onRequestState, handleSignal, handleVoice,
+    handleVsig, pruneGone, maybeConnect, streamTo, hostState, applyLocal, addFloater, sendChat,
+    joinVoice, leaveVoice, toggleMute, enableAudio, toggleMod, togglePlay, skip, toggleFs, toggleFilmMute,
+  });
 
   /* ---------- Efectos ---------- */
   useEffect(() => {
     iceReadyRef.current = loadIceServers().then((s) => { iceRef.current = s; });
   }, []);
 
+  useEffect(() => { document.title = `Sala ${roomId} · Cine Miraculous`; }, [roomId]);
+
   useEffect(() => {
     const ch = supabase.channel(`watch-party:${roomId}`, {
       config: { broadcast: { self: false, ack: false }, presence: { key: me } },
     });
     channelRef.current = ch;
-    const api = () => apiRef.current;
 
-    ch.on('broadcast', { event: 'chat' }, ({ payload }) => setMessages((m) => [...m.slice(-199), payload]));
-    ch.on('broadcast', { event: 'sync' }, ({ payload }) => api().onSync(payload));
-    ch.on('broadcast', { event: 'video-url' }, ({ payload }) => api().onVideoUrl(payload));
-    ch.on('broadcast', { event: 'video-stream' }, ({ payload }) => api().onVideoStream(payload));
-    ch.on('broadcast', { event: 'video-local' }, ({ payload }) => api().onVideoLocal(payload));
+    ch.on('broadcast', { event: 'chat' }, ({ payload }) => act.onChat(payload));
+    ch.on('broadcast', { event: 'react' }, ({ payload }) => act.addFloater(payload.emoji));
+    ch.on('broadcast', { event: 'sync' }, ({ payload }) => act.onSync(payload));
+    ch.on('broadcast', { event: 'video-url' }, ({ payload }) => act.onVideoUrl(payload));
+    ch.on('broadcast', { event: 'video-stream' }, ({ payload }) => act.onVideoStream(payload));
+    ch.on('broadcast', { event: 'video-local' }, ({ payload }) => act.onVideoLocal(payload));
     ch.on('broadcast', { event: 'roles' }, ({ payload }) => {
       if (payload.to && payload.to !== me) return;
       setMods(payload.mods || []);
     });
-    ch.on('broadcast', { event: 'request-state' }, ({ payload }) => api().onRequestState(payload));
-    ch.on('broadcast', { event: 'signal' }, ({ payload }) => api().handleSignal(payload));
-    ch.on('broadcast', { event: 'vsig' }, ({ payload }) => api().handleVsig(payload));
-    ch.on('broadcast', { event: 'voice' }, ({ payload }) => api().handleVoice(payload));
+    ch.on('broadcast', { event: 'request-state' }, ({ payload }) => act.onRequestState(payload));
+    ch.on('broadcast', { event: 'signal' }, ({ payload }) => act.handleSignal(payload));
+    ch.on('broadcast', { event: 'vsig' }, ({ payload }) => act.handleVsig(payload));
+    ch.on('broadcast', { event: 'voice' }, ({ payload }) => act.handleVoice(payload));
     ch.on('presence', { event: 'sync' }, () => {
       const list = Object.entries(ch.presenceState()).map(([id, metas]) => ({ id, ...metas[0] }));
       setParticipants(list);
-      api().pruneGone(new Set(list.map((p) => p.id)));
+      act.pruneGone(new Set(list.map((p) => p.id)));
     });
 
     ch.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         setConnected(true);
         await ch.track(presenceRef.current);
+        setTimeout(() => { readyRef.current = true; }, 2500);
         if (!isHost) ch.send({ type: 'broadcast', event: 'request-state', payload: { from: me } });
       } else if (['CLOSED', 'CHANNEL_ERROR', 'TIMED_OUT'].includes(status)) {
         setConnected(false);
@@ -995,11 +1157,24 @@ function Room({ roomId, name, isHost, onLeave }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
+  // Avisos cuando alguien entra o sale de la sala
+  useEffect(() => {
+    const prev = prevPartsRef.current;
+    prevPartsRef.current = new Map(participants.map((p) => [p.id, p.name]));
+    if (!prev || !readyRef.current) return;
+    participants.forEach((p) => { if (p.id !== me && !prev.has(p.id)) toast(`${p.name} entró a la sala`); });
+    prev.forEach((n, id) => {
+      if (id !== me && !participants.some((p) => p.id === id)) toast(`${n} salió de la sala`);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participants]);
+
   // Reproductor de YouTube (API oficial IFrame)
   useEffect(() => {
     if (mode !== 'youtube' || !ytId) return undefined;
     let cancelled = false;
     let poll;
+    setYtReady(false);
     loadYT().then((YT) => {
       if (cancelled || !ytHolderRef.current) return;
       const el = document.createElement('div');
@@ -1015,14 +1190,15 @@ function Room({ roomId, name, isHost, onLeave }) {
           onReady: () => {
             if (cancelled) return;
             ytRef.current = player;
+            setYtReady(true);
             setDuration(player.getDuration() || 0);
             if (pendingSyncRef.current) {
               const p = pendingSyncRef.current;
               pendingSyncRef.current = null;
-              apiRef.current.applyLocal(p);
+              act.applyLocal(p);
             }
           },
-          onStateChange: (e) => setPlaying(e.data === 1),
+          onStateChange: (e) => { setPlaying(e.data === 1); setBuffering(e.data === 3); },
           onError: () => setNotice('YouTube no permite reproducir este video fuera de su página. Prueba con otro enlace.'),
         },
       });
@@ -1039,9 +1215,24 @@ function Room({ roomId, name, isHost, onLeave }) {
       clearInterval(poll);
       try { ytRef.current && ytRef.current.destroy && ytRef.current.destroy(); } catch { /* nada */ }
       ytRef.current = null;
+      setYtReady(false);
       if (ytHolderRef.current) ytHolderRef.current.innerHTML = '';
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, ytId]);
+
+  // Volumen propio de cada persona (no afecta a las demás)
+  useEffect(() => {
+    localStorage.setItem('wp-vol', String(volume));
+    if (!volumeAllowed) return;
+    const v = videoRef.current;
+    if (v) { v.volume = volume; v.muted = filmMuted; }
+    const y = ytRef.current;
+    if (y && y.setVolume) {
+      y.setVolume(Math.round(volume * 100));
+      if (filmMuted) y.mute(); else y.unMute();
+    }
+  }, [volume, filmMuted, mode, videoSrc, remoteVideo, ytReady, volumeAllowed]);
 
   // Invitadas en transmisión en vivo: conectar la imagen recibida al reproductor
   useEffect(() => {
@@ -1063,14 +1254,31 @@ function Room({ roomId, name, isHost, onLeave }) {
   useEffect(() => {
     if (!isHost) return undefined;
     const id = setInterval(() => {
-      const s = apiRef.current.hostState();
+      const s = act.hostState();
       if (s) send('sync', { action: 'state', ...s, from: me });
     }, 4000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost]);
 
-  useEffect(() => { chatEndRef.current && chatEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages]);
+  // Atajos de teclado: espacio o K, flechas, F, M
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target;
+      const tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (tag === 'BUTTON' && e.key === ' ') return;
+      if (e.key === ' ' || e.key === 'k') { e.preventDefault(); act.togglePlay(); }
+      else if (e.key === 'ArrowRight') act.skip(10);
+      else if (e.key === 'ArrowLeft') act.skip(-10);
+      else if (e.key === 'f') act.toggleFs();
+      else if (e.key === 'm') act.toggleFilmMute();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const h = () => {
@@ -1097,7 +1305,7 @@ function Room({ roomId, name, isHost, onLeave }) {
 
   /* ---------- Render ---------- */
   const failedPeers = Object.values(peerStatus).some((s) => s === 'failed');
-  const roleOf = (p) => (p.host ? 'Anfitriona' : mods.includes(p.id) ? 'Moderadora' : 'Invitada');
+  const showTab = (id) => (tab === id ? '' : 'hidden');
 
   return (
     <div className={`cielo ${playing ? 'vivo' : ''}`}>
@@ -1105,28 +1313,39 @@ function Room({ roomId, name, isHost, onLeave }) {
         <RemoteAudio key={id} stream={stream} onBlocked={() => setAudioBlocked(true)} />
       ))}
 
+      {/* Avisos */}
+      <div className="fixed top-3 right-3 z-[10000] flex flex-col gap-2 items-end pointer-events-none" role="status" aria-live="polite">
+        {toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}
+      </div>
+
       <header className="max-w-[1400px] mx-auto flex flex-wrap items-center gap-3 px-4 pt-4 pb-3">
         <span className="logo" />
-        <h1 className="fx-display text-2xl leading-none">Cine Miraculous</h1>
+        <h1 className="font-display text-2xl leading-none">Cine Miraculous</h1>
         <span className="pill">Sala {roomId}</span>
         <span className="pill">
-          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-[var(--gato)]' : 'bg-amber-400'}`} />
+          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-gato' : 'bg-amber-400'}`} />
           {connected ? 'Conectada' : 'Conectando…'}
         </span>
         <div className="ml-auto flex gap-2">
-          <button className="btn" onClick={copyInvite}>
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-            {copied ? 'Copiado' : 'Copiar invitación'}
+          <button className="btn" onClick={shareInvite} aria-label="Compartir invitación">
+            {copied ? <Check size={16} /> : typeof navigator !== 'undefined' && navigator.share ? <Share2 size={16} /> : <Copy size={16} />}
+            <span className="hidden sm:inline">{copied ? 'Copiado' : 'Invitar'}</span>
           </button>
-          <button className="btn btn-tinta" onClick={exit}>
-            <LogOut size={16} /> Salir
+          <button className="btn btn-tinta" onClick={exit} aria-label="Salir de la sala">
+            <LogOut size={16} /> <span className="hidden sm:inline">Salir</span>
           </button>
         </div>
       </header>
 
-      <main className="max-w-[1400px] mx-auto grid gap-5 px-4 pb-28 lg:grid-cols-[minmax(0,1fr)_390px]">
+      <main className={`max-w-[1400px] mx-auto grid gap-5 px-4 pb-28 ${theater ? 'lg:grid-cols-1' : 'lg:grid-cols-[minmax(0,1fr)_390px]'}`}>
         {/* ---------------- Columna de la película ---------------- */}
         <section className="min-w-0 space-y-4">
+          {hostGone && (
+            <p className="toast !bg-capa text-amber-300">
+              La anfitriona no está en la sala ahora. Cuando vuelva, se retoma la sincronización.
+            </p>
+          )}
+
           <div
             ref={containerRef}
             className={isFs ? 'isfs fixed inset-0 z-[9999] bg-black' : 'relative'}
@@ -1140,9 +1359,9 @@ function Room({ roomId, name, isHost, onLeave }) {
             >
               {mode === 'none' && (
                 <div className="absolute inset-0 lunares flex items-center justify-center p-6">
-                  <div className="bg-[var(--tinta)] text-white rounded-3xl px-6 py-5 text-center max-w-xs">
-                    <p className="fx-display text-xl mb-1">Aún no hay película</p>
-                    <p className="text-sm text-[var(--tenue)]">
+                  <div className="bg-tinta text-white rounded-3xl px-6 py-5 text-center max-w-xs">
+                    <p className="font-display text-xl mb-1">Aún no hay película</p>
+                    <p className="text-sm text-tenue">
                       {isHost
                         ? 'Comparte un archivo, sube un video o pega un enlace de YouTube.'
                         : 'Esperando a que la anfitriona ponga algo.'}
@@ -1178,6 +1397,12 @@ function Room({ roomId, name, isHost, onLeave }) {
                     if (isHost && mode === 'stream') streamAll(true);
                   }}
                   onPause={() => { if (!liveGuest) setPlaying(false); }}
+                  onWaiting={() => setBuffering(true)}
+                  onPlaying={() => setBuffering(false)}
+                  onCanPlay={() => setBuffering(false)}
+                  onError={() => {
+                    if (!liveGuest && videoSrc) setNotice('No se pudo cargar el video. Revisa que sea un enlace directo (https) a un MP4 o WebM.');
+                  }}
                 />
               )}
 
@@ -1188,10 +1413,17 @@ function Room({ roomId, name, isHost, onLeave }) {
                 </>
               )}
 
+              {buffering && !needsTap && (
+                <div className="absolute inset-0 z-[6] flex items-center justify-center pointer-events-none">
+                  <Loader2 size={44} className="animate-spin text-white/80" />
+                </div>
+              )}
+
               {liveGuest && !remoteVideo && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 text-center px-6">
                   <Loader2 className="animate-spin" />
                   <p className="text-sm">Conectando con la transmisión de la anfitriona…</p>
+                  <button className="btn btn-sm" onClick={resync}><RefreshCw size={14} /> Reintentar</button>
                 </div>
               )}
 
@@ -1202,6 +1434,19 @@ function Room({ roomId, name, isHost, onLeave }) {
                 >
                   <Play /> Toca para unirte a la función
                 </button>
+              )}
+
+              {/* Reacciones flotantes */}
+              {floaters.map((f) => (
+                <span key={f.id} className="flota" style={{ left: `${f.x}%` }} aria-hidden="true">{f.emoji}</span>
+              ))}
+
+              {/* Mensajes de la charla en pantalla completa */}
+              {isFs && fsMsg && fsMsg.from !== me && (
+                <div className="absolute left-4 bottom-28 z-20 burbuja">
+                  <span className="text-xs text-tenue block">{fsMsg.name}</span>
+                  {fsMsg.text}
+                </div>
               )}
 
               <div
@@ -1222,32 +1467,72 @@ function Room({ roomId, name, isHost, onLeave }) {
                   onMouseUp={(e) => seekTo(parseFloat(e.currentTarget.value))}
                   onTouchEnd={(e) => seekTo(parseFloat(e.currentTarget.value))}
                 />
-                <div className="flex items-center gap-2 mt-2">
-                  <button className="btn btn-sm bg-transparent" disabled={!canControl || mode === 'none'} onClick={() => skip(-10)} aria-label="Retroceder 10 segundos">
+                <div className="flex items-center gap-1.5 mt-2">
+                  <button className="btn btn-sm btn-ghost" disabled={!canControl || mode === 'none'} onClick={() => skip(-10)} aria-label="Retroceder 10 segundos">
                     <SkipBack size={20} />
                   </button>
-                  <button className="btn btn-rojo !rounded-full !p-3" disabled={!canControl || mode === 'none'} onClick={togglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>
+                  <button className="btn btn-rojo btn-circulo" disabled={!canControl || mode === 'none'} onClick={togglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>
                     {playing ? <Pause size={20} /> : <Play size={20} />}
                   </button>
-                  <button className="btn btn-sm bg-transparent" disabled={!canControl || mode === 'none'} onClick={() => skip(10)} aria-label="Adelantar 10 segundos">
+                  <button className="btn btn-sm btn-ghost" disabled={!canControl || mode === 'none'} onClick={() => skip(10)} aria-label="Adelantar 10 segundos">
                     <SkipForward size={20} />
                   </button>
                   <span className="text-sm tabular-nums ml-1">{fmt(current)} / {fmt(duration)}</span>
-                  {!canControl && <span className="text-xs text-[var(--tenue)] ml-2 hidden sm:inline">Controlan la anfitriona y las moderadoras</span>}
-                  <button className="btn btn-sm bg-transparent ml-auto" onClick={toggleFs} aria-label="Pantalla completa">
-                    {isFs ? <Minimize size={20} /> : <Maximize size={20} />}
-                  </button>
+
+                  <div className="ml-auto flex items-center gap-1">
+                    {volumeAllowed && (
+                      <>
+                        <button className="btn btn-sm btn-ghost" onClick={toggleFilmMute} aria-label={filmMuted ? 'Activar sonido' : 'Silenciar película'}>
+                          {filmMuted || volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                        </button>
+                        <input
+                          type="range"
+                          className="barra hidden sm:block !w-20"
+                          aria-label="Volumen de la película"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={filmMuted ? 0 : volume}
+                          style={{ '--p': `${(filmMuted ? 0 : volume) * 100}%` }}
+                          onChange={(e) => { setVolume(parseFloat(e.target.value)); setFilmMuted(false); }}
+                        />
+                      </>
+                    )}
+                    {!isHost && mode !== 'none' && (
+                      <button className="btn btn-sm btn-ghost" onClick={resync} aria-label="Sincronizar con la anfitriona" title="Sincronizar">
+                        <RefreshCw size={20} />
+                      </button>
+                    )}
+                    <button className="btn btn-sm btn-ghost hidden lg:inline-flex" onClick={() => setTheater((t) => !t)} aria-label="Modo cine" title="Modo cine">
+                      {theater ? <PanelRightOpen size={20} /> : <PanelRightClose size={20} />}
+                    </button>
+                    <button className="btn btn-sm btn-ghost" onClick={toggleFs} aria-label="Pantalla completa">
+                      {isFs ? <Minimize size={20} /> : <Maximize size={20} />}
+                    </button>
+                  </div>
                 </div>
+                {!canControl && mode !== 'none' && (
+                  <p className="text-xs text-tenue mt-1">Controlan la anfitriona y las moderadoras.</p>
+                )}
               </div>
             </div>
+          </div>
+
+          {/* Reacciones */}
+          <div className="flex gap-2 overflow-x-auto scroll-fino pb-1" role="group" aria-label="Reacciones">
+            {EMOJIS.map((e) => (
+              <button key={e} className="btn btn-sm text-xl" onClick={() => sendReaction(e)} aria-label={`Reaccionar con ${e}`}>
+                {e}
+              </button>
+            ))}
           </div>
 
           {/* Fuente del video */}
           {(isHost || videoLabel || notice) && (
             <div className="panel p-4 space-y-3">
-              {videoLabel && <p className="text-sm text-[var(--tenue)] truncate">Reproduciendo: <span className="text-[var(--luna)]">{videoLabel}</span></p>}
+              {videoLabel && <p className="text-sm text-tenue truncate">Reproduciendo: <span className="text-luna">{videoLabel}</span></p>}
               {isHost && mode === 'stream' && (
-                <p className="text-sm text-[var(--gato)]">
+                <p className="text-sm text-gato">
                   Transmitiendo en vivo a {liveCount} {liveCount === 1 ? 'persona' : 'personas'}. No cierres esta pestaña.
                 </p>
               )}
@@ -1283,7 +1568,7 @@ function Room({ roomId, name, isHost, onLeave }) {
                       <LinkIcon size={16} /> Cargar
                     </button>
                   </div>
-                  <p className="text-xs text-[var(--tenue)]">
+                  <p className="text-xs text-tenue">
                     En vivo: tu archivo se ve en las pantallas de todas al instante, sin subirlo (mejor desde computadora con Chrome, Edge o Firefox; usa audífonos). La nube tiene un máximo de {MAX_UPLOAD_MB} MB y se borra al salir.
                   </p>
                 </>
@@ -1300,107 +1585,49 @@ function Room({ roomId, name, isHost, onLeave }) {
         </section>
 
         {/* ---------------- Columna social ---------------- */}
-        <aside className="min-w-0 space-y-5">
-          {/* En la sala */}
-          <div className="panel p-4">
-            <h2 className="fx-display text-lg mb-3">En la sala ({participants.length})</h2>
-            <ul className="space-y-3 max-h-64 overflow-y-auto scroll-fino pr-1">
-              {participants.map((p) => {
-                const isMod = mods.includes(p.id);
-                const st = peerStatus[p.id];
-                return (
-                  <li key={p.id} className="flex items-center gap-3">
-                    <Avatar name={p.name} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-sm font-bold">
-                        <span className="truncate">{p.name}{p.id === me ? ' (tú)' : ''}</span>
-                        {p.host && <span title="Anfitriona"><Crown size={14} className="text-[#F8C537]" /></span>}
-                        {isMod && <span title="Moderadora"><ShieldCheck size={14} className="text-[var(--gato)]" /></span>}
-                      </div>
-                      <div className="text-xs text-[var(--tenue)] flex flex-wrap gap-x-2">
-                        <span>{roleOf(p)}</span>
-                        {p.voice && <span className={p.muted ? 'text-[#FF9AA0]' : 'text-[var(--gato)]'}>{p.muted ? 'micrófono apagado' : 'en la llamada'}</span>}
-                        {inVoice && p.voice && p.id !== me && st === 'connected' && <span className="text-[var(--gato)]">voz conectada</span>}
-                        {inVoice && p.voice && p.id !== me && st === 'connecting' && <span className="text-amber-300">conectando voz…</span>}
-                        {inVoice && p.voice && p.id !== me && st === 'failed' && <span className="text-[#FF9AA0]">sin conexión de voz</span>}
-                      </div>
-                    </div>
-                    {p.voice && (p.muted ? <MicOff size={16} className="text-[#FF9AA0] shrink-0" /> : <Mic size={16} className="text-[var(--gato)] shrink-0" />)}
-                    {isHost && p.id !== me && (
-                      <button
-                        className={`btn btn-sm ${isMod ? 'btn-gato' : ''}`}
-                        onClick={() => toggleMod(p.id)}
-                        aria-label={isMod ? `Quitar moderadora a ${p.name}` : `Hacer moderadora a ${p.name}`}
-                        title={isMod ? 'Quitar moderadora' : 'Hacer moderadora'}
-                      >
-                        {isMod ? <ShieldCheck size={16} /> : <Shield size={16} />}
-                      </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+        <aside className={`min-w-0 space-y-5 ${theater ? 'lg:grid lg:grid-cols-3 lg:gap-5 lg:space-y-0' : ''}`}>
+          {/* Pestañas en celular */}
+          <div className="lg:hidden grid grid-cols-3 gap-2">
+            {[['charla', 'Charla', MessageCircle], ['sala', 'Sala', Users], ['voz', 'Voz', Headphones]].map(([id, label, Icon]) => (
+              <button
+                key={id}
+                className={`btn ${tab === id ? 'btn-rojo' : ''}`}
+                onClick={() => { setTab(id); if (id === 'charla') setUnread(0); }}
+              >
+                <Icon size={16} /> {label}
+                {id === 'charla' && unread > 0 && (
+                  <span className="bg-gato text-tinta rounded-full text-xs px-1.5">{unread}</span>
+                )}
+              </button>
+            ))}
           </div>
 
-          {/* Voz */}
-          <div className="panel p-4">
-            <h2 className="fx-display text-lg mb-3">Llamada de voz</h2>
-            {!inVoice ? (
-              <button className="btn btn-gato w-full" onClick={joinVoice}>
-                <PhoneCall size={18} /> Entrar a la llamada de voz
-              </button>
-            ) : (
-              <div className="flex gap-2">
-                <button className={`btn flex-1 ${muted ? 'btn-rojo' : ''}`} onClick={toggleMute}>
-                  {muted ? <><MicOff size={18} /> Activar micrófono</> : <><Mic size={18} /> Mutear micrófono</>}
-                </button>
-                <button className="btn btn-tinta" onClick={leaveVoice} aria-label="Salir de la llamada">
-                  <PhoneOff size={18} />
-                </button>
-              </div>
-            )}
-            {voiceError && <p className="text-sm text-[#FF9AA0] mt-3">{voiceError}</p>}
-            {audioBlocked && (
-              <button className="btn btn-rojo w-full mt-3" onClick={enableAudio}>
-                <Volume2 size={18} /> Toca para activar el audio
-              </button>
-            )}
-            {failedPeers && !TURN_CREDENTIALS_URL && (
-              <p className="text-xs text-amber-300 mt-3">
-                Algunas conexiones no lograron enlazarse. Con datos móviles o ciertas redes hace falta un servidor TURN (configúralo en config.js).
-              </p>
-            )}
-          </div>
-
-          {/* Charla */}
-          <div className="panel flex flex-col h-[52vh] lg:h-[calc(100dvh-560px)] lg:min-h-[300px]">
-            <h2 className="fx-display text-lg px-4 pt-4 pb-2">Charla</h2>
-            <div className="flex-1 overflow-y-auto scroll-fino px-4 space-y-2">
-              {messages.length === 0 && <p className="text-sm text-[var(--tenue)] pt-2">Escribe el primer mensaje.</p>}
-              {messages.map((m) => {
-                const mine = m.from === me;
-                return (
-                  <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                    {!mine && <span className="text-[11px] text-[var(--tenue)] px-1">{m.name}</span>}
-                    <div className={`burbuja ${mine ? 'burbuja-mia' : ''}`}>{m.text}</div>
-                  </div>
-                );
-              })}
-              <div ref={chatEndRef} />
-            </div>
-            <form onSubmit={sendChat} className="p-3 flex gap-2">
-              <input
-                className="campo-noche"
-                value={chatInput}
-                maxLength={500}
-                placeholder="Escribe un mensaje"
-                onChange={(e) => setChatInput(e.target.value)}
-              />
-              <button type="submit" className="btn btn-rojo shrink-0" aria-label="Enviar mensaje">
-                <Send size={18} />
-              </button>
-            </form>
-          </div>
+          <Palco
+            participants={participants}
+            mods={mods}
+            peerStatus={peerStatus}
+            inVoice={inVoice}
+            isHost={isHost}
+            me={me}
+            act={act}
+            className={`${showTab('sala')} lg:block`}
+          />
+          <VoicePanel
+            inVoice={inVoice}
+            muted={muted}
+            voiceError={voiceError}
+            audioBlocked={audioBlocked}
+            failedPeers={failedPeers}
+            act={act}
+            className={`${showTab('voz')} lg:block`}
+          />
+          <ChatPanel
+            messages={messages}
+            me={me}
+            act={act}
+            visible={tab === 'charla'}
+            className={`h-[56vh] ${showTab('charla')} lg:flex ${theater ? 'lg:h-[360px]' : 'lg:h-[calc(100dvh-560px)] lg:min-h-[300px]'}`}
+          />
         </aside>
       </main>
     </div>
