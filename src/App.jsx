@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Maximize, Minimize, Copy, Check, Mic, MicOff,
-  PhoneCall, PhoneOff, Send, Crown, ShieldCheck, Shield, LogOut, Upload, FileVideo,
+  PhoneCall, PhoneOff, Send, Crown, ShieldCheck, Shield, LogOut, Upload, FileVideo, Cast,
   Link as LinkIcon, Trash2, Volume2, Loader2,
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
@@ -47,6 +47,7 @@ html,body{margin:0;padding:0;background:var(--noche);color:var(--luna);font-fami
 @media (prefers-reduced-motion:reduce){.vivo .bulbs::before,.vivo .bulbs::after{animation:none;opacity:1}}
 .pantalla{position:relative;overflow:hidden;background:#000;border:7px solid var(--tinta);border-radius:28px;box-shadow:0 0 0 2px var(--linea),0 26px 60px -24px rgba(232,34,46,.55)}
 .isfs .pantalla{border:0;border-radius:0;box-shadow:none;height:100%}
+.yt-holder iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .panel{background:var(--azotea);border:1px solid var(--linea);border-radius:22px}
 .pill{display:inline-flex;align-items:center;gap:.4rem;border-radius:999px;padding:.3rem .75rem;font-size:.8rem;background:var(--zinc);border:1px solid var(--linea)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;border-radius:14px;padding:.65rem 1rem;font-weight:700;font-size:.92rem;border:0;cursor:pointer;color:var(--luna);background:var(--zinc);transition:filter .15s}
@@ -103,53 +104,35 @@ const loadIceServers = async () => {
   }
 };
 
-let youtubeApiPromise;
-
-const loadYouTubeAPI = () => {
-  if (window.YT?.Player) return Promise.resolve(window.YT);
-  if (youtubeApiPromise) return youtubeApiPromise;
-
-  youtubeApiPromise = new Promise((resolve, reject) => {
-    const previous = window.onYouTubeIframeAPIReady;
-
-    window.onYouTubeIframeAPIReady = () => {
-      previous?.();
-      resolve(window.YT);
-    };
-
-    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
-      const script = document.createElement('script');
-      script.src = 'https://www.youtube.com/iframe_api';
-      script.onerror = reject;
-      document.head.appendChild(script);
+// Devuelve el ID de un enlace de YouTube (watch, youtu.be, shorts, embed, live) o null
+const parseYouTube = (u) => {
+  try {
+    const x = new URL(u);
+    const h = x.hostname.replace(/^www\.|^m\./, '');
+    if (h === 'youtu.be') return x.pathname.slice(1).split('/')[0] || null;
+    if (h.endsWith('youtube.com')) {
+      if (x.pathname === '/watch') return x.searchParams.get('v');
+      const m = x.pathname.match(/^\/(embed|shorts|live)\/([\w-]{11})/);
+      if (m) return m[2];
     }
-  });
-
-  return youtubeApiPromise;
+  } catch { /* no es URL válida */ }
+  return null;
 };
 
-const getYouTubeId = (url) => {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, '');
-
-    let id = null;
-
-    if (host === 'youtu.be') {
-      id = parsed.pathname.split('/')[1];
-    } else if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) {
-      if (parsed.pathname === '/watch') {
-        id = parsed.searchParams.get('v');
-      } else {
-        const match = parsed.pathname.match(/^\/(?:embed|shorts)\/([^/?]+)/);
-        id = match?.[1] || null;
-      }
-    }
-
-    return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
-  } catch {
-    return null;
+// Carga la API oficial de YouTube IFrame una sola vez
+let ytApiPromise = null;
+const loadYT = () => {
+  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (!ytApiPromise) {
+    ytApiPromise = new Promise((resolve) => {
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { if (prev) prev(); resolve(window.YT); };
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    });
   }
+  return ytApiPromise;
 };
 
 function Avatar({ name, size = 38 }) {
@@ -169,79 +152,10 @@ function RemoteAudio({ stream, onBlocked }) {
     const el = ref.current;
     if (!el) return;
     el.srcObject = stream;
-    const p = el.play?.();
-    if (p && p.catch) p.catch(() => onBlocked?.());
+    const p = el.play && el.play();
+    if (p && p.catch) p.catch(() => onBlocked && onBlocked());
   }, [stream]);
   return <audio ref={ref} autoPlay playsInline />;
-}
-
-function YouTubePlayer({ videoId, playerRef, onReady, onStateChange, onError }) {
-  const elementRef = useRef(null);
-  const instanceRef = useRef(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let instance;
-
-    const initialize = async () => {
-      try {
-        const YT = await loadYouTubeAPI();
-        if (cancelled || !elementRef.current) return;
-
-        instance = new YT.Player(elementRef.current, {
-          videoId,
-          playerVars: {
-            autoplay: 0,
-            controls: 0,
-            disablekb: 1,
-            fs: 0,
-            playsinline: 1,
-            rel: 0,
-            origin: window.location.origin,
-          },
-          events: {
-            onReady: (event) => {
-              if (cancelled) return;
-
-              instanceRef.current = event.target;
-              playerRef.current = event.target;
-
-              onReady?.(event.target);
-            },
-            onStateChange: (event) => {
-              if (!cancelled) onStateChange?.(event);
-            },
-            onError: (event) => {
-              if (!cancelled) onError?.(event);
-            },
-          },
-        });
-
-        instanceRef.current = instance;
-      } catch (error) {
-        if (!cancelled) onError?.(error);
-      }
-    };
-
-    initialize();
-
-    return () => {
-      cancelled = true;
-
-      if (playerRef.current === instanceRef.current) {
-        playerRef.current = null;
-      }
-
-      instanceRef.current?.destroy();
-      instanceRef.current = null;
-    };
-  }, [videoId]);
-
-  return (
-    <div className="absolute inset-0 w-full h-full bg-black">
-      <div ref={elementRef} className="absolute inset-0 w-full h-full" />
-    </div>
-  );
 }
 
 /* =====================================================================
@@ -282,7 +196,7 @@ export default function App() {
         </p>
 
         <div className="boleto-a">
-          <div className="lunares h-14 rounded-t-[24px] flex items-end px-5 pb-0">
+          <div className="lunares h-14 rounded-t-[24px] flex items-end px-5">
             <span className="bg-[var(--tinta)] text-white text-sm font-bold px-3 py-1 rounded-t-xl">Entrada para la función</span>
           </div>
           <div className="p-6 pt-5">
@@ -326,26 +240,34 @@ function Room({ roomId, name, isHost, onLeave }) {
   // Refs
   const apiRef = useRef({});
   const channelRef = useRef(null);
-  const htmlVideoRef = useRef(null);
+  const videoRef = useRef(null);
+  const ytRef = useRef(null);
+  const ytHolderRef = useRef(null);
   const containerRef = useRef(null);
   const chatEndRef = useRef(null);
-  const pcsRef = useRef(new Map());
-  const pendingIceRef = useRef(new Map());
+  const pcsRef = useRef(new Map());           // voz
+  const pendingIceRef = useRef(new Map());    // voz
   const voicePeersRef = useRef(new Set());
   const retriesRef = useRef(new Map());
+  const streamPcsRef = useRef(new Map());     // transmisión de video en vivo
+  const vPendingRef = useRef(new Map());
+  const vRetriesRef = useRef(new Map());
+  const captureRef = useRef(null);
   const localStreamRef = useRef(null);
   const iceRef = useRef(STUN);
+  const iceReadyRef = useRef(null);
   const presenceRef = useRef({ name, host: isHost, voice: false, muted: false });
   const pendingSyncRef = useRef(null);
   const lastSeekSentRef = useRef(0);
   const lastActRef = useRef(0);
   const objectUrlRef = useRef(null);
-  const urlSrcRef = useRef(null); // { url, label } cuando es nube o enlace
+  const urlSrcRef = useRef(null);             // { url, label } nube, enlace o YouTube
   const localNameRef = useRef('');
   const cloudPathRef = useRef('');
+  const srcKeyRef = useRef('');
   const hideRef = useRef(null);
-  const youtubePlayerRef = useRef(null);
-  const youtubeReadyRef = useRef(false);
+  const participantsRef = useRef([]);
+  const modeRef = useRef('none');
 
   // Estado
   const [participants, setParticipants] = useState([]);
@@ -355,8 +277,12 @@ function Room({ roomId, name, isHost, onLeave }) {
   });
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+  const [mode, setMode] = useState('none'); // none | file | youtube | stream
   const [videoSrc, setVideoSrc] = useState('');
+  const [ytId, setYtId] = useState('');
   const [videoLabel, setVideoLabel] = useState('');
+  const [remoteVideo, setRemoteVideo] = useState(null);
+  const [liveCount, setLiveCount] = useState(0);
   const [urlInput, setUrlInput] = useState('');
   const [notice, setNotice] = useState('');
   const [localNeeded, setLocalNeeded] = useState(false);
@@ -378,13 +304,14 @@ function Room({ roomId, name, isHost, onLeave }) {
   const [remoteStreams, setRemoteStreams] = useState({});
   const [peerStatus, setPeerStatus] = useState({});
 
-  const youtubeId = getYouTubeId(videoSrc);
-  const isYouTube = Boolean(youtubeId);
+  modeRef.current = mode;
+  participantsRef.current = participants;
 
   const canControl = isHost || mods.includes(me);
+  const liveGuest = mode === 'stream' && !isHost;
   const isFs = nativeFs || pseudoFs;
   const pct = duration ? Math.min(100, (current / duration) * 100) : 0;
-  const controlsVisible = ctrlVisible || !playing || !videoSrc;
+  const controlsVisible = ctrlVisible || !playing || mode === 'none';
 
   /* ---------- Helpers de canal ---------- */
   const send = (event, payload = {}) => channelRef.current?.send({ type: 'broadcast', event, payload });
@@ -393,14 +320,17 @@ function Room({ roomId, name, isHost, onLeave }) {
     channelRef.current?.track(presenceRef.current);
   };
 
-  /* ---------- Video ---------- */
-  const setSource = (url, label) => {
-    youtubeReadyRef.current = false;
-    youtubePlayerRef.current = null;
-    htmlVideoRef.current = null;
+  /* ---------- Fuente de video ---------- */
+  const setSource = (kind, url, label, yId = '') => {
+    srcKeyRef.current = kind === 'youtube' ? `youtube|${yId}` : kind === 'stream' ? `stream|${label}` : `file|${url}`;
+    captureRef.current = null;
+    closeAllStreams();
+    vRetriesRef.current = new Map();
     pendingSyncRef.current = null;
-
-    setVideoSrc(url);
+    setRemoteVideo(null);
+    setMode(kind);
+    setVideoSrc(url || '');
+    setYtId(yId);
     setVideoLabel(label);
     setCurrent(0);
     setDuration(0);
@@ -408,86 +338,48 @@ function Room({ roomId, name, isHost, onLeave }) {
     setNeedsTap(false);
   };
 
-  const getActiveVideo = () => {
-    if (isYouTube) {
-      const player = youtubePlayerRef.current;
+  /* ---------- Aplicar órdenes de reproducción ---------- */
+  const checkYtStarted = () =>
+    setTimeout(() => {
+      const y = ytRef.current;
+      const s = y && y.getPlayerState && y.getPlayerState();
+      if (y && s !== 1 && s !== 3) setNeedsTap(true);
+    }, 1500);
 
-      if (!player || !youtubeReadyRef.current) return null;
+  const applyLocal = (p) => {
+    const m = modeRef.current;
 
-      return {
-        src: videoSrc,
-        readyState: 1,
-        get currentTime() {
-          return player.getCurrentTime();
-        },
-        set currentTime(value) {
-          player.seekTo(value, true);
-        },
-        get paused() {
-          return player.getPlayerState() !== 1;
-        },
-        play() {
-          player.playVideo();
-          return Promise.resolve();
-        },
-        pause() {
-          player.pauseVideo();
-        },
-      };
-    }
-
-    return htmlVideoRef.current;
-  };
-
-  const handleYouTubeReady = (player) => {
-    youtubePlayerRef.current = player;
-    youtubeReadyRef.current = true;
-
-    setDuration(player.getDuration());
-    setCurrent(player.getCurrentTime());
-
-    if (pendingSyncRef.current) {
-      const pending = pendingSyncRef.current;
-      pendingSyncRef.current = null;
-      applySync(pending);
-    }
-  };
-
-  const handleYouTubeState = (event) => {
-    if (event.data === 1) {
-      setPlaying(true);
-      setNeedsTap(false);
-    } else if (event.data === 2 || event.data === 0) {
-      setPlaying(false);
-    }
-
-    if (youtubePlayerRef.current) {
-      setCurrent(youtubePlayerRef.current.getCurrentTime());
-      setDuration(youtubePlayerRef.current.getDuration());
-    }
-  };
-
-  const applySync = (p) => {
-    const v = getActiveVideo();
-
-    if (!v || !v.src || v.readyState < 1) {
-      pendingSyncRef.current = p;
+    if (m === 'youtube') {
+      const y = ytRef.current;
+      if (!y || !y.seekTo) { pendingSyncRef.current = p; return; }
+      const st = y.getPlayerState && y.getPlayerState();
+      if (p.action === 'play') { y.seekTo(p.time, true); y.playVideo(); checkYtStarted(); }
+      else if (p.action === 'pause') { y.pauseVideo(); y.seekTo(p.time, true); }
+      else if (p.action === 'seek') { y.seekTo(p.time, true); }
+      else if (p.action === 'state') {
+        if (Math.abs((y.getCurrentTime ? y.getCurrentTime() : 0) - p.time) > 1.5) y.seekTo(p.time, true);
+        if (p.playing && st !== 1) { y.playVideo(); checkYtStarted(); }
+        else if (!p.playing && st === 1) y.pauseVideo();
+      }
       return;
     }
 
-    const tryPlay = () => v.play()
-      .then(() => setNeedsTap(false))
-      .catch(() => setNeedsTap(true));
+    if (m === 'stream' && !isHost) {
+      // La imagen llega en vivo de la anfitriona; aquí solo reflejamos el estado en la interfaz
+      if (p.action === 'play') setPlaying(true);
+      else if (p.action === 'pause') setPlaying(false);
+      else if (p.action === 'state') { setPlaying(!!p.playing); if (p.duration) setDuration(p.duration); }
+      if (p.time != null) setCurrent(p.time);
+      return;
+    }
 
-    if (p.action === 'play') {
-      v.currentTime = p.time;
-      tryPlay();
-    } else if (p.action === 'pause') {
-      v.pause();
-      v.currentTime = p.time;
-    } else if (p.action === 'seek') {
-      v.currentTime = p.time;
-    } else if (p.action === 'state') {
+    const v = videoRef.current;
+    if (!v || !v.src || v.readyState < 1) { pendingSyncRef.current = p; return; }
+    const tryPlay = () => v.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
+    if (p.action === 'play') { v.currentTime = p.time; tryPlay(); }
+    else if (p.action === 'pause') { v.pause(); v.currentTime = p.time; }
+    else if (p.action === 'seek') { v.currentTime = p.time; }
+    else if (p.action === 'state') {
       if (p.playing) {
         if (Math.abs(v.currentTime - p.time) > 1.5) v.currentTime = p.time;
         if (v.paused) tryPlay();
@@ -499,48 +391,55 @@ function Room({ roomId, name, isHost, onLeave }) {
   };
 
   const onSync = (p) => {
-    if (p.from === me) return;
+    if (p.from === me || (p.to && p.to !== me)) return;
     if (p.action === 'state' && Date.now() - lastActRef.current < 1800) return;
-    applySync(p);
+    applyLocal(p);
   };
 
-  const act = (action, time) => {
+  const command = (action, time, broadcast = true) => {
     lastActRef.current = Date.now();
-    send('sync', { action, time, from: me });
+    applyLocal({ action, time });
+    if (broadcast) send('sync', { action, time, from: me });
+  };
+
+  const nowTime = () => {
+    if (modeRef.current === 'youtube') return (ytRef.current && ytRef.current.getCurrentTime && ytRef.current.getCurrentTime()) || current;
+    if (modeRef.current === 'stream' && !isHost) return current;
+    return videoRef.current ? videoRef.current.currentTime : current;
   };
 
   const togglePlay = () => {
-    const v = getActiveVideo();
-    if (!canControl || !v || !v.src) return;
-
-    if (v.paused) {
-      v.play().catch(() => {});
-      act('play', v.currentTime);
-    } else {
-      v.pause();
-      act('pause', v.currentTime);
-    }
+    if (!canControl || mode === 'none') return;
+    command(playing ? 'pause' : 'play', nowTime());
   };
 
   const seekTo = (t, throttle = false) => {
-    const v = getActiveVideo();
-    if (!canControl || !v || !v.src) return;
-
-    const time = Math.max(0, Math.min(duration || t, t));
-
-    v.currentTime = time;
+    if (!canControl || mode === 'none') return;
+    const time = Math.max(0, duration ? Math.min(duration, t) : t);
     setCurrent(time);
-
     const now = Date.now();
-    if (throttle && now - lastSeekSentRef.current < 150) return;
-
-    lastSeekSentRef.current = now;
-    act('seek', time);
+    const doSend = !throttle || now - lastSeekSentRef.current >= 150;
+    if (doSend) lastSeekSentRef.current = now;
+    command('seek', time, doSend);
   };
 
-  const skip = (d) => {
-    const v = getActiveVideo();
-    if (v) seekTo(v.currentTime + d);
+  const skip = (d) => seekTo(nowTime() + d);
+
+  const hostState = () => {
+    if (modeRef.current === 'youtube') {
+      const y = ytRef.current;
+      if (!y || !y.getCurrentTime) return null;
+      return { time: y.getCurrentTime(), playing: y.getPlayerState() === 1, duration: y.getDuration() };
+    }
+    const v = videoRef.current;
+    if (!v || !v.src || v.readyState < 1) return null;
+    return { time: v.currentTime, playing: !v.paused, duration: v.duration };
+  };
+
+  const unlock = () => {
+    if (modeRef.current === 'youtube') ytRef.current && ytRef.current.playVideo && ytRef.current.playVideo();
+    else if (videoRef.current) videoRef.current.play().catch(() => {});
+    setNeedsTap(false);
   };
 
   const poke = () => {
@@ -564,10 +463,10 @@ function Room({ roomId, name, isHost, onLeave }) {
         return;
       } catch { /* cae al modo alternativo */ }
     }
-    setPseudoFs(true);
+    setPseudoFs(true); // iPhone y navegadores sin API de pantalla completa
   };
 
-  /* ---------- Fuente de video: nube, enlace, local ---------- */
+  /* ---------- Cargar video: nube, enlace/YouTube, archivo en vivo ---------- */
   const removeCloud = async () => {
     const path = cloudPathRef.current;
     if (!path) return;
@@ -579,7 +478,7 @@ function Room({ roomId, name, isHost, onLeave }) {
   const uploadVideo = async (file) => {
     const mb = file.size / 1024 / 1024;
     if (mb > MAX_UPLOAD_MB) {
-      setNotice(`El archivo pesa ${mb.toFixed(0)} MB y el límite es ${MAX_UPLOAD_MB} MB. Comprímelo (MP4 H.264) o usa un enlace directo.`);
+      setNotice(`El archivo pesa ${mb.toFixed(0)} MB y el límite es ${MAX_UPLOAD_MB} MB. Usa "Compartir archivo en vivo" o un enlace.`);
       return;
     }
     setUploading(true);
@@ -599,7 +498,7 @@ function Room({ roomId, name, isHost, onLeave }) {
       setHasCloud(true);
       urlSrcRef.current = { url: data.publicUrl, label: file.name };
       localNameRef.current = '';
-      setSource(data.publicUrl, file.name);
+      setSource('file', data.publicUrl, file.name);
       send('video-url', { url: data.publicUrl, label: file.name });
     } catch (e) {
       setNotice(`No se pudo subir el video: ${e.message || e}`);
@@ -610,64 +509,86 @@ function Room({ roomId, name, isHost, onLeave }) {
   const loadUrl = () => {
     const url = urlInput.trim();
     if (!url) return;
+    const id = parseYouTube(url);
     urlSrcRef.current = { url, label: url };
     localNameRef.current = '';
-    setSource(url, url);
-    setUrlInput('');
+    setNotice('');
+    if (id) setSource('youtube', '', url, id);
+    else setSource('file', url, url);
     send('video-url', { url, label: url });
   };
 
   const loadLocalFile = (e) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!file) return;
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
-    setSource(url, file.name);
     setNotice('');
     setLocalNeeded(false);
-    if (isHost) {
-      urlSrcRef.current = null;
+
+    if (!isHost) { setSource('file', url, file.name); return; } // invitada con su propio archivo
+
+    urlSrcRef.current = null;
+    const canCapture =
+      typeof HTMLMediaElement !== 'undefined' &&
+      ('captureStream' in HTMLMediaElement.prototype || 'mozCaptureStream' in HTMLMediaElement.prototype);
+    if (canCapture) {
+      localNameRef.current = '';
+      setSource('stream', url, file.name);
+      send('video-stream', { label: file.name });
+    } else {
       localNameRef.current = file.name;
+      setSource('file', url, file.name);
+      setNotice('Tu navegador no puede transmitir en vivo. Las demás deberán elegir el mismo archivo en su dispositivo.');
       send('video-local', { name: file.name });
     }
   };
 
   const onVideoUrl = (p) => {
-    if (isHost) return;
-    setSource(p.url, p.label || p.url);
+    if (isHost || (p.to && p.to !== me)) return;
+    const id = parseYouTube(p.url);
+    const key = id ? `youtube|${id}` : `file|${p.url}`;
+    if (srcKeyRef.current === key) return;
+    if (id) setSource('youtube', '', p.label || p.url, id);
+    else setSource('file', p.url, p.label || p.url);
+    setNotice('');
+    setLocalNeeded(false);
+  };
+
+  const onVideoStream = (p) => {
+    if (isHost || (p.to && p.to !== me)) return;
+    const label = p.label || 'Transmisión en vivo';
+    if (srcKeyRef.current === `stream|${label}`) return;
+    setSource('stream', '', label);
     setNotice('');
     setLocalNeeded(false);
   };
 
   const onVideoLocal = (p) => {
-    if (isHost) return;
+    if (isHost || (p.to && p.to !== me)) return;
     setNotice(`La anfitriona puso el archivo «${p.name}» desde su dispositivo. Elige el mismo archivo en el tuyo.`);
     setLocalNeeded(true);
   };
 
-  const onRequestState = () => {
+  const onRequestState = (payload) => {
     if (!isHost) return;
-
-    if (urlSrcRef.current) send('video-url', urlSrcRef.current);
-    else if (localNameRef.current) send('video-local', { name: localNameRef.current });
-
-    send('roles', { mods });
-
-    const v = getActiveVideo();
-
-    if (v && v.src) {
-      send('sync', {
-        action: 'state',
-        time: v.currentTime,
-        playing: !v.paused,
-        from: me,
-      });
+    const to = payload && payload.from;
+    const m = modeRef.current;
+    if (m === 'stream') {
+      send('video-stream', { label: videoLabel, to });
+      streamTo(to);
+    } else if (urlSrcRef.current) {
+      send('video-url', { ...urlSrcRef.current, to });
+    } else if (localNameRef.current) {
+      send('video-local', { name: localNameRef.current, to });
     }
+    send('roles', { mods, to });
+    const s = hostState();
+    if (s) send('sync', { action: 'state', ...s, from: me, to });
   };
 
-  /* ---------- Moderadoras ---------- */
   const toggleMod = (id) => {
     const next = mods.includes(id) ? mods.filter((m) => m !== id) : [...mods, id];
     setMods(next);
@@ -675,7 +596,137 @@ function Room({ roomId, name, isHost, onLeave }) {
     send('roles', { mods: next });
   };
 
-  /* ---------- WebRTC ---------- */
+  /* ---------- Transmisión en vivo del archivo local (WebRTC) ---------- */
+  const flushQueue = async (mapRef, peerId, pc) => {
+    const queue = mapRef.current.get(peerId) || [];
+    mapRef.current.delete(peerId);
+    for (const c of queue) {
+      try { await pc.addIceCandidate(c); } catch (e) { console.warn(e); }
+    }
+  };
+
+  const updateLive = () =>
+    setLiveCount([...streamPcsRef.current.values()].filter((p) => p.connectionState === 'connected').length);
+
+  const closeStreamPc = (id) => {
+    const pc = streamPcsRef.current.get(id);
+    if (pc) {
+      streamPcsRef.current.delete(id);
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.onconnectionstatechange = null;
+      pc.close();
+    }
+    vPendingRef.current.delete(id);
+    updateLive();
+  };
+
+  const closeAllStreams = () => [...streamPcsRef.current.keys()].forEach(closeStreamPc);
+
+  const getCapture = () => {
+    const v = videoRef.current;
+    if (!v) return null;
+    if (!captureRef.current) {
+      try {
+        captureRef.current = (v.captureStream || v.mozCaptureStream).call(v);
+      } catch {
+        return null;
+      }
+    }
+    return captureRef.current;
+  };
+
+  const streamTo = (peerId, attempt = 0) => {
+    if (!isHost || !peerId || modeRef.current !== 'stream') return;
+    const s = getCapture();
+    if (!s || s.getTracks().length === 0) {
+      if (attempt < 12) setTimeout(() => apiRef.current.streamTo(peerId, attempt + 1), 500);
+      return;
+    }
+    closeStreamPc(peerId);
+    const pc = new RTCPeerConnection({ iceServers: iceRef.current });
+    streamPcsRef.current.set(peerId, pc);
+    s.getTracks().forEach((t) => {
+      if (t.kind === 'video') t.contentHint = 'motion';
+      pc.addTrack(t, s);
+    });
+    pc.onicecandidate = (e) => {
+      if (e.candidate) send('vsig', { from: me, to: peerId, kind: 'ice', data: e.candidate.toJSON() });
+    };
+    pc.onconnectionstatechange = () => {
+      updateLive();
+      if (pc.connectionState === 'failed') {
+        closeStreamPc(peerId);
+        const n = (vRetriesRef.current.get(peerId) || 0) + 1;
+        vRetriesRef.current.set(peerId, n);
+        if (n <= 3) setTimeout(() => apiRef.current.streamTo(peerId), 2000);
+      }
+    };
+    (async () => {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      // Limita la subida por persona para no saturar el internet de la anfitriona
+      pc.getSenders().forEach((sn) => {
+        if (sn.track && sn.track.kind === 'video') {
+          const prm = sn.getParameters();
+          if (!prm.encodings || !prm.encodings.length) prm.encodings = [{}];
+          prm.encodings[0].maxBitrate = 1800000;
+          sn.setParameters(prm).catch(() => {});
+        }
+      });
+      send('vsig', {
+        from: me, to: peerId, kind: 'offer',
+        data: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
+      });
+    })().catch(console.error);
+  };
+
+  const streamAll = (onlyMissing = false) => {
+    participantsRef.current.forEach((p) => {
+      if (p.id === me) return;
+      if (onlyMissing && streamPcsRef.current.has(p.id)) return;
+      streamTo(p.id);
+    });
+  };
+
+  const handleVsig = async ({ from, to, kind, data }) => {
+    if (to !== me) return;
+    try {
+      if (kind === 'offer') {
+        if (isHost) return;
+        if (!srcKeyRef.current.startsWith('stream|')) setSource('stream', '', 'Transmisión en vivo');
+        closeStreamPc(from);
+        const pc = new RTCPeerConnection({ iceServers: iceRef.current });
+        streamPcsRef.current.set(from, pc);
+        pc.onicecandidate = (e) => {
+          if (e.candidate) send('vsig', { from: me, to: from, kind: 'ice', data: e.candidate.toJSON() });
+        };
+        pc.ontrack = (e) => setRemoteVideo(e.streams[0]);
+        await pc.setRemoteDescription(data);
+        await flushQueue(vPendingRef, from, pc);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        send('vsig', {
+          from: me, to: from, kind: 'answer',
+          data: { type: pc.localDescription.type, sdp: pc.localDescription.sdp },
+        });
+      } else if (kind === 'answer') {
+        const pc = streamPcsRef.current.get(from);
+        if (pc && pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(data);
+          await flushQueue(vPendingRef, from, pc);
+        }
+      } else if (kind === 'ice') {
+        const pc = streamPcsRef.current.get(from);
+        if (pc && pc.remoteDescription) await pc.addIceCandidate(data);
+        else vPendingRef.current.set(from, [...(vPendingRef.current.get(from) || []), data]);
+      }
+    } catch (e) {
+      console.error('Señalización de video', e);
+    }
+  };
+
+  /* ---------- WebRTC: voz ---------- */
   const closePeer = (peerId, keepStatus = false) => {
     const pc = pcsRef.current.get(peerId);
     if (pc) {
@@ -741,18 +792,11 @@ function Room({ roomId, name, isHost, onLeave }) {
     return pc;
   };
 
+  // Regla anti-colisión: ofrece el que tiene el id menor
   const maybeConnect = (peerId) => {
     if (!localStreamRef.current || !voicePeersRef.current.has(peerId)) return;
     if (pcsRef.current.has(peerId)) return;
     if (me < peerId) createPeer(peerId, true);
-  };
-
-  const flushIce = async (peerId, pc) => {
-    const queue = pendingIceRef.current.get(peerId) || [];
-    pendingIceRef.current.delete(peerId);
-    for (const c of queue) {
-      try { await pc.addIceCandidate(c); } catch (e) { console.warn(e); }
-    }
   };
 
   const handleVoice = ({ kind, from, to, reply }) => {
@@ -784,7 +828,7 @@ function Room({ roomId, name, isHost, onLeave }) {
         closePeer(from, true);
         const pc = createPeer(from, false);
         await pc.setRemoteDescription(data);
-        await flushIce(from, pc);
+        await flushQueue(pendingIceRef, from, pc);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         send('signal', {
@@ -795,7 +839,7 @@ function Room({ roomId, name, isHost, onLeave }) {
         const pc = pcsRef.current.get(from);
         if (pc && pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(data);
-          await flushIce(from, pc);
+          await flushQueue(pendingIceRef, from, pc);
         }
       } else if (kind === 'ice') {
         const pc = pcsRef.current.get(from);
@@ -803,19 +847,20 @@ function Room({ roomId, name, isHost, onLeave }) {
         else pendingIceRef.current.set(from, [...(pendingIceRef.current.get(from) || []), data]);
       }
     } catch (e) {
-      console.error('Señalización', e);
+      console.error('Señalización de voz', e);
     }
   };
 
   const pruneGone = (ids) => {
     [...pcsRef.current.keys()].forEach((id) => { if (!ids.has(id)) closePeer(id); });
     [...voicePeersRef.current].forEach((id) => { if (!ids.has(id)) voicePeersRef.current.delete(id); });
+    [...streamPcsRef.current.keys()].forEach((id) => { if (!ids.has(id)) closeStreamPc(id); });
   };
 
   const joinVoice = async () => {
     setVoiceError('');
     try {
-      iceRef.current = await loadIceServers();
+      await iceReadyRef.current;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
@@ -840,7 +885,7 @@ function Room({ roomId, name, isHost, onLeave }) {
     [...pcsRef.current.keys()].forEach((id) => closePeer(id));
     pendingIceRef.current = new Map();
     voicePeersRef.current = new Set();
-    localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     setInVoice(false);
     setMuted(false);
@@ -886,13 +931,22 @@ function Room({ roomId, name, isHost, onLeave }) {
 
   const exit = async () => {
     leaveVoice();
+    closeAllStreams();
     if (isHost) await removeCloud();
     onLeave();
   };
 
-  apiRef.current = { onSync, onVideoUrl, onVideoLocal, onRequestState, handleSignal, handleVoice, pruneGone, maybeConnect };
+  // API siempre actualizada para los handlers del canal
+  apiRef.current = {
+    onSync, onVideoUrl, onVideoStream, onVideoLocal, onRequestState, handleSignal, handleVoice,
+    handleVsig, pruneGone, maybeConnect, streamTo, hostState, applyLocal,
+  };
 
   /* ---------- Efectos ---------- */
+  useEffect(() => {
+    iceReadyRef.current = loadIceServers().then((s) => { iceRef.current = s; });
+  }, []);
+
   useEffect(() => {
     const ch = supabase.channel(`watch-party:${roomId}`, {
       config: { broadcast: { self: false, ack: false }, presence: { key: me } },
@@ -903,10 +957,15 @@ function Room({ roomId, name, isHost, onLeave }) {
     ch.on('broadcast', { event: 'chat' }, ({ payload }) => setMessages((m) => [...m.slice(-199), payload]));
     ch.on('broadcast', { event: 'sync' }, ({ payload }) => api().onSync(payload));
     ch.on('broadcast', { event: 'video-url' }, ({ payload }) => api().onVideoUrl(payload));
+    ch.on('broadcast', { event: 'video-stream' }, ({ payload }) => api().onVideoStream(payload));
     ch.on('broadcast', { event: 'video-local' }, ({ payload }) => api().onVideoLocal(payload));
-    ch.on('broadcast', { event: 'roles' }, ({ payload }) => setMods(payload.mods || []));
-    ch.on('broadcast', { event: 'request-state' }, () => api().onRequestState());
+    ch.on('broadcast', { event: 'roles' }, ({ payload }) => {
+      if (payload.to && payload.to !== me) return;
+      setMods(payload.mods || []);
+    });
+    ch.on('broadcast', { event: 'request-state' }, ({ payload }) => api().onRequestState(payload));
     ch.on('broadcast', { event: 'signal' }, ({ payload }) => api().handleSignal(payload));
+    ch.on('broadcast', { event: 'vsig' }, ({ payload }) => api().handleVsig(payload));
     ch.on('broadcast', { event: 'voice' }, ({ payload }) => api().handleVoice(payload));
     ch.on('presence', { event: 'sync' }, () => {
       const list = Object.entries(ch.presenceState()).map(([id, metas]) => ({ id, ...metas[0] }));
@@ -918,7 +977,7 @@ function Room({ roomId, name, isHost, onLeave }) {
       if (status === 'SUBSCRIBED') {
         setConnected(true);
         await ch.track(presenceRef.current);
-        if (!isHost) ch.send({ type: 'broadcast', event: 'request-state', payload: {} });
+        if (!isHost) ch.send({ type: 'broadcast', event: 'request-state', payload: { from: me } });
       } else if (['CLOSED', 'CHANNEL_ERROR', 'TIMED_OUT'].includes(status)) {
         setConnected(false);
       }
@@ -926,7 +985,8 @@ function Room({ roomId, name, isHost, onLeave }) {
 
     return () => {
       [...pcsRef.current.keys()].forEach((id) => closePeer(id));
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      [...streamPcsRef.current.keys()].forEach((id) => closeStreamPc(id));
+      if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
       supabase.removeChannel(ch);
@@ -935,32 +995,88 @@ function Room({ roomId, name, isHost, onLeave }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
+  // Reproductor de YouTube (API oficial IFrame)
   useEffect(() => {
-    if (!isHost) return;
+    if (mode !== 'youtube' || !ytId) return undefined;
+    let cancelled = false;
+    let poll;
+    loadYT().then((YT) => {
+      if (cancelled || !ytHolderRef.current) return;
+      const el = document.createElement('div');
+      ytHolderRef.current.innerHTML = '';
+      ytHolderRef.current.appendChild(el);
+      ytRef.current = null;
+      const player = new YT.Player(el, {
+        videoId: ytId,
+        width: '100%',
+        height: '100%',
+        playerVars: { controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0, playsinline: 1, iv_load_policy: 3 },
+        events: {
+          onReady: () => {
+            if (cancelled) return;
+            ytRef.current = player;
+            setDuration(player.getDuration() || 0);
+            if (pendingSyncRef.current) {
+              const p = pendingSyncRef.current;
+              pendingSyncRef.current = null;
+              apiRef.current.applyLocal(p);
+            }
+          },
+          onStateChange: (e) => setPlaying(e.data === 1),
+          onError: () => setNotice('YouTube no permite reproducir este video fuera de su página. Prueba con otro enlace.'),
+        },
+      });
+      poll = setInterval(() => {
+        const y = ytRef.current;
+        if (!y || !y.getCurrentTime) return;
+        setCurrent(y.getCurrentTime());
+        const d = y.getDuration();
+        if (d) setDuration(d);
+      }, 500);
+    });
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      try { ytRef.current && ytRef.current.destroy && ytRef.current.destroy(); } catch { /* nada */ }
+      ytRef.current = null;
+      if (ytHolderRef.current) ytHolderRef.current.innerHTML = '';
+    };
+  }, [mode, ytId]);
 
-    const id = setInterval(() => {
-      const v = getActiveVideo();
+  // Invitadas en transmisión en vivo: conectar la imagen recibida al reproductor
+  useEffect(() => {
+    const v = videoRef.current;
+    if (mode === 'stream' && !isHost && v && remoteVideo) {
+      v.srcObject = remoteVideo;
+      v.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
+    }
+  }, [remoteVideo, mode]);
 
-      if (v && v.src && v.readyState >= 1) {
-        send('sync', {
-          action: 'state',
-          time: v.currentTime,
-          playing: !v.paused,
-          from: me,
-        });
-      }
-    }, 4000);
-
+  // Invitadas en transmisión en vivo: avanzar el reloj entre latidos
+  useEffect(() => {
+    if (!(mode === 'stream' && !isHost && playing)) return undefined;
+    const id = setInterval(() => setCurrent((c) => c + 0.25), 250);
     return () => clearInterval(id);
-  }, [isHost, isYouTube, videoSrc]);
+  }, [mode, playing]);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages]);
+  // Latido de la anfitriona: corrige la deriva de todas
+  useEffect(() => {
+    if (!isHost) return undefined;
+    const id = setInterval(() => {
+      const s = apiRef.current.hostState();
+      if (s) send('sync', { action: 'state', ...s, from: me });
+    }, 4000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost]);
+
+  useEffect(() => { chatEndRef.current && chatEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [messages]);
 
   useEffect(() => {
     const h = () => {
       const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
       setNativeFs(on);
-      if (!on) { try { window.screen.orientation?.unlock?.(); } catch { /* nada */ } }
+      if (!on) { try { window.screen.orientation && window.screen.orientation.unlock && window.screen.orientation.unlock(); } catch { /* nada */ } }
     };
     document.addEventListener('fullscreenchange', h);
     document.addEventListener('webkitfullscreenchange', h);
@@ -971,7 +1087,7 @@ function Room({ roomId, name, isHost, onLeave }) {
   }, []);
 
   useEffect(() => {
-    if (!pseudoFs) return;
+    if (!pseudoFs) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const esc = (e) => e.key === 'Escape' && setPseudoFs(false);
@@ -1022,58 +1138,67 @@ function Room({ roomId, name, isHost, onLeave }) {
               onPointerMove={poke}
               onTouchStart={poke}
             >
-              {videoSrc ? (
-                isYouTube ? (
-                  <YouTubePlayer
-                    key={youtubeId}
-                    videoId={youtubeId}
-                    playerRef={youtubePlayerRef}
-                    onReady={handleYouTubeReady}
-                    onStateChange={handleYouTubeState}
-                    onError={() => setNotice('Error al reproducir el video de YouTube')}
-                  />
-                ) : (
-                  <video
-                    key={videoSrc}
-                    ref={htmlVideoRef}
-                    src={videoSrc}
-                    playsInline
-                    preload="auto"
-                    className="absolute inset-0 w-full h-full object-contain bg-black"
-                    onClick={() => (canControl ? togglePlay() : poke())}
-                    onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
-                    onLoadedMetadata={(e) => {
-                      setDuration(e.currentTarget.duration);
-                      if (pendingSyncRef.current) {
-                        const p = pendingSyncRef.current;
-                        pendingSyncRef.current = null;
-                        applySync(p);
-                      }
-                    }}
-                    onPlay={() => setPlaying(true)}
-                    onPause={() => setPlaying(false)}
-                  />
-                )
-              ) : (
+              {mode === 'none' && (
                 <div className="absolute inset-0 lunares flex items-center justify-center p-6">
                   <div className="bg-[var(--tinta)] text-white rounded-3xl px-6 py-5 text-center max-w-xs">
                     <p className="fx-display text-xl mb-1">Aún no hay película</p>
                     <p className="text-sm text-[var(--tenue)]">
                       {isHost
-                        ? 'Sube un episodio o pega un enlace para empezar.'
+                        ? 'Comparte un archivo, sube un video o pega un enlace de YouTube.'
                         : 'Esperando a que la anfitriona ponga algo.'}
                     </p>
                   </div>
                 </div>
               )}
 
+              {(mode === 'file' || mode === 'stream') && (
+                <video
+                  key={mode === 'stream' && !isHost ? 'stream' : videoSrc}
+                  ref={videoRef}
+                  src={mode === 'file' || isHost ? videoSrc : undefined}
+                  playsInline
+                  autoPlay={liveGuest}
+                  preload="auto"
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                  onClick={() => (canControl ? togglePlay() : poke())}
+                  onTimeUpdate={(e) => { if (!liveGuest) setCurrent(e.currentTarget.currentTime); }}
+                  onLoadedMetadata={(e) => {
+                    if (liveGuest) return;
+                    setDuration(e.currentTarget.duration);
+                    if (pendingSyncRef.current) {
+                      const p = pendingSyncRef.current;
+                      pendingSyncRef.current = null;
+                      applyLocal(p);
+                    }
+                  }}
+                  onLoadedData={() => { if (isHost && mode === 'stream') streamAll(); }}
+                  onPlay={() => {
+                    if (liveGuest) return;
+                    setPlaying(true);
+                    if (isHost && mode === 'stream') streamAll(true);
+                  }}
+                  onPause={() => { if (!liveGuest) setPlaying(false); }}
+                />
+              )}
+
+              {mode === 'youtube' && (
+                <>
+                  <div ref={ytHolderRef} className="yt-holder absolute inset-0" />
+                  <div className="absolute inset-0 z-[5]" onClick={() => (canControl ? togglePlay() : poke())} />
+                </>
+              )}
+
+              {liveGuest && !remoteVideo && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 text-center px-6">
+                  <Loader2 className="animate-spin" />
+                  <p className="text-sm">Conectando con la transmisión de la anfitriona…</p>
+                </div>
+              )}
+
               {needsTap && (
                 <button
                   className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-black/75 text-lg font-bold"
-                  onClick={() => {
-                    const v = getActiveVideo();
-                    v?.play().then(() => setNeedsTap(false)).catch(() => {});
-                  }}
+                  onClick={unlock}
                 >
                   <Play /> Toca para unirte a la función
                 </button>
@@ -1090,21 +1215,21 @@ function Room({ roomId, name, isHost, onLeave }) {
                   min={0}
                   max={duration || 0}
                   step={0.1}
-                  value={current}
-                  disabled={!canControl || !videoSrc}
+                  value={Math.min(current, duration || 0)}
+                  disabled={!canControl || mode === 'none'}
                   style={{ '--p': `${pct}%` }}
                   onChange={(e) => seekTo(parseFloat(e.target.value), true)}
                   onMouseUp={(e) => seekTo(parseFloat(e.currentTarget.value))}
                   onTouchEnd={(e) => seekTo(parseFloat(e.currentTarget.value))}
                 />
                 <div className="flex items-center gap-2 mt-2">
-                  <button className="btn btn-sm bg-transparent" disabled={!canControl || !videoSrc} onClick={() => skip(-10)} aria-label="Retroceder 10 segundos">
+                  <button className="btn btn-sm bg-transparent" disabled={!canControl || mode === 'none'} onClick={() => skip(-10)} aria-label="Retroceder 10 segundos">
                     <SkipBack size={20} />
                   </button>
-                  <button className="btn btn-rojo !rounded-full !p-3" disabled={!canControl || !videoSrc} onClick={togglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>
+                  <button className="btn btn-rojo !rounded-full !p-3" disabled={!canControl || mode === 'none'} onClick={togglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>
                     {playing ? <Pause size={20} /> : <Play size={20} />}
                   </button>
-                  <button className="btn btn-sm bg-transparent" disabled={!canControl || !videoSrc} onClick={() => skip(10)} aria-label="Adelantar 10 segundos">
+                  <button className="btn btn-sm bg-transparent" disabled={!canControl || mode === 'none'} onClick={() => skip(10)} aria-label="Adelantar 10 segundos">
                     <SkipForward size={20} />
                   </button>
                   <span className="text-sm tabular-nums ml-1">{fmt(current)} / {fmt(duration)}</span>
@@ -1121,19 +1246,24 @@ function Room({ roomId, name, isHost, onLeave }) {
           {(isHost || videoLabel || notice) && (
             <div className="panel p-4 space-y-3">
               {videoLabel && <p className="text-sm text-[var(--tenue)] truncate">Reproduciendo: <span className="text-[var(--luna)]">{videoLabel}</span></p>}
+              {isHost && mode === 'stream' && (
+                <p className="text-sm text-[var(--gato)]">
+                  Transmitiendo en vivo a {liveCount} {liveCount === 1 ? 'persona' : 'personas'}. No cierres esta pestaña.
+                </p>
+              )}
               {notice && <p className="text-sm text-amber-300">{notice}</p>}
 
               {isHost && (
                 <>
                   <div className="flex flex-wrap gap-2">
-                    <label className={`btn btn-rojo cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : ''}`}>
+                    <label className="btn btn-rojo cursor-pointer">
+                      <Cast size={16} /> Compartir archivo en vivo
+                      <input type="file" accept="video/*" className="hidden" onChange={loadLocalFile} />
+                    </label>
+                    <label className={`btn cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : ''}`}>
                       {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                       {uploading ? 'Subiendo… no cierres la página' : 'Subir video a la nube'}
-                      <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadVideo(f); }} />
-                    </label>
-                    <label className="btn cursor-pointer">
-                      <FileVideo size={16} /> Archivo local
-                      <input type="file" accept="video/*" className="hidden" onChange={loadLocalFile} />
+                      <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) uploadVideo(f); }} />
                     </label>
                     {hasCloud && (
                       <button className="btn" onClick={removeCloud}>
@@ -1147,14 +1277,14 @@ function Room({ roomId, name, isHost, onLeave }) {
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && loadUrl()}
-                      placeholder="Pega un enlace directo o de YouTube (ej. https://youtu.be/...)"
+                      placeholder="Enlace de YouTube o de un video directo (MP4)"
                     />
                     <button className="btn btn-tinta shrink-0" onClick={loadUrl}>
                       <LinkIcon size={16} /> Cargar
                     </button>
                   </div>
                   <p className="text-xs text-[var(--tenue)]">
-                    Puedes subir archivos, pegar enlaces directos MP4 o enlaces de YouTube para verlos en sincronía con tus amigas.
+                    En vivo: tu archivo se ve en las pantallas de todas al instante, sin subirlo (mejor desde computadora con Chrome, Edge o Firefox; usa audífonos). La nube tiene un máximo de {MAX_UPLOAD_MB} MB y se borra al salir.
                   </p>
                 </>
               )}
@@ -1171,7 +1301,7 @@ function Room({ roomId, name, isHost, onLeave }) {
 
         {/* ---------------- Columna social ---------------- */}
         <aside className="min-w-0 space-y-5">
-          {/* Palco */}
+          {/* En la sala */}
           <div className="panel p-4">
             <h2 className="fx-display text-lg mb-3">En la sala ({participants.length})</h2>
             <ul className="space-y-3 max-h-64 overflow-y-auto scroll-fino pr-1">
